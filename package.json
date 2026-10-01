@@ -1,0 +1,21 @@
+{
+  "name": "tarsier-derby",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "node tools/build.js",
+    "start": "node tools/build.js && node server/server.js",
+    "dev": "node tools/build.js && node server/server.js",
+    "test": "node tools/build.js && node --test test/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

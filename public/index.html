@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>안경원숭이 더비 · 화성 경마장</title>
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="title">
+  <div class="title-in">
+    <div class="logo">안경원숭이 더비</div>
+    <div class="logo-sub">MARS TARSIER DERBY</div>
+    <div class="tcard">
+      <canvas id="avatar" width="40" height="44"></canvas>
+      <div class="tform">
+        <label>닉네임<input id="nick" maxlength="10" autocomplete="off" spellcheck="false" placeholder="2~10자"></label>
+        <div class="row" id="gender"><button data-g="m">남자</button><button data-g="f">여자</button><button id="reroll" title="외형 다시 뽑기">외형 다시 뽑기</button></div>
+        <div id="nick-err" class="err"></div>
+        <button id="enter" class="big">입장하기</button>
+      </div>
+    </div>
+    <div id="online" class="muted"></div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="me-box" class="chip"><span id="coin-ico"></span><b id="coins">0</b><span id="jail-t"></span></div>
+  <div id="race-box" class="chip"><div id="race-line1"></div><div id="race-line2"></div><div id="race-bar"></div></div>
+  <div id="board-box" class="chip"><div class="bh">부자 순위 <span id="online-n"></span></div><ol id="board-list"></ol></div>
+  <div id="ticker"></div>
+  <div id="toasts"></div>
+  <div id="chat"><div id="chat-log"></div><input id="chat-in" maxlength="80" autocomplete="off" placeholder="Enter 로 채팅"></div>
+  <div id="mybets" class="chip hidden"><div class="bh">내 마권</div><div id="mybets-list"></div></div>
+  <div id="bar">
+    <button data-act="bet" class="key">B<span>베팅</span></button>
+    <button data-act="shop" class="key">I<span>상점</span></button>
+    <button data-act="board" class="key">L<span>순위</span></button>
+    <button data-act="watch" class="key">V<span>중계</span></button>
+    <button data-act="help" class="key">H<span>도움말</span></button>
+    <button data-act="mute" class="key" id="mute-btn">M<span>소리</span></button>
+    <span class="sep"></span>
+    <span id="emotes"></span>
+  </div>
+  <div id="prompt" class="hidden"></div>
+</div>
+
+<div id="bet" class="drawer hidden">
+  <div class="dh"><b id="bet-title">베팅</b><span id="bet-count"></span><button class="x" data-close="bet">×</button></div>
+  <div class="tabs" id="bet-tabs"><button data-type="win" class="on">단승 <small>1등</small></button><button data-type="place">연승 <small>2등 안</small></button><button data-type="exacta">쌍승 <small>1·2등 순서</small></button></div>
+  <div id="runners"></div>
+  <div id="slip">
+    <div id="slip-pick" class="muted">출전 안경원숭이를 고르세요 (숫자키 1~6)</div>
+    <div class="row"><input id="amt" type="number" min="10" step="10" inputmode="numeric"><span id="payout"></span></div>
+    <div class="row chips"><button data-add="10">+10</button><button data-add="50">+50</button><button data-add="100">+100</button><button data-add="500">+500</button><button data-add="half">절반</button><button data-add="all">올인</button><button data-add="0">0</button></div>
+    <div class="row"><button id="place" class="big">마권 구매</button><button id="cancel-all">전부 취소</button></div>
+    <div id="slip-closed" class="hidden">베팅 마감</div>
+  </div>
+</div>
+
+<div id="modal" class="hidden"><div class="mbox"><button class="x" data-close="modal">×</button><div id="modal-body"></div></div></div>
+<div id="overlay" class="hidden"><div id="overlay-text"></div></div>
+
+<script src="shared/world.js"></script>
+<script src="shared/race.js"></script>
+<script src="art.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
