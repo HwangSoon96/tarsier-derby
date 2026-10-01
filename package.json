@@ -1,7 +1,7 @@
 {
   "name": "tarsier-derby",
   "version": "1.0.0",
-  "description": "",
+  "description": "화성 경마장 안경원숭이 경주 베팅 멀티플레이 브라우저 게임",
   "main": "index.js",
   "scripts": {
     "build": "node tools/build.js",
