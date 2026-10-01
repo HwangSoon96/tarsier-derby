@@ -148,8 +148,8 @@
     if (it) {
       const o = it.ref, X = sx(o.x) / dpr, Y = sy(o.y - (it.kind === 'npc' ? 40 : 22)) / dpr;
       pr.style.left = X + 'px'; pr.style.top = Y + 'px';
-      const txt = it.kind === 'npc' ? `E ${o.name}` : 'E / 클릭  캐기';
-      if (pr._t !== txt) { pr.replaceChildren(h('b', null, 'E'), ' ' + txt.slice(2)); pr._t = txt; }
+      const txt = it.kind === 'npc' ? (o.act === 'bet' ? '베팅하기' : o.act === 'shop' ? '상점 둘러보기' : '말 걸기') : '캐기';
+      if (pr._t !== txt) { pr.replaceChildren(h('b', null, 'E'), ' ' + txt); pr._t = txt; }
       pr.classList.remove('hidden');
     } else pr.classList.add('hidden');
     // 중계 PIP: 선두 근접 화면

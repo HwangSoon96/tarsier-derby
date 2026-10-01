@@ -36,7 +36,7 @@
     if (typing()) document.activeElement.blur();
     const wx = G.cam.x + (e.clientX * dpr) / gp, wy = G.cam.y + (e.clientY * dpr) / gp, me = G.players.get(G.id);
     const n = NPCS.find((q) => Math.abs(q.x - wx) < 12 && wy > q.y - 34 && wy < q.y + 4);
-    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 를 누르세요.`); return; }
+    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 키를 눌러 주세요.`); return; }
     if (e.button === 0 || e.button === 2) { G.holdUse = e.button === 0; use(); }
   });
   addEventListener('mouseup', () => { G.holdUse = false; });
@@ -62,7 +62,7 @@
   function interact(n) {
     if (n.act === 'bet') openBet();
     else if (n.act === 'shop') openShop();
-    else toast(['R-2: 파산하면 30초간 여기서 반성하는 거다.', 'R-2: 우리 안에서도 채팅은 할 수 있지.', `R-2: 석방되면 보석금 ${CFG.BAILOUT}코인을 준다. 이번엔 신중하게!`][Math.floor(Math.random() * 3)]);
+    else toast(['R-2: 파산하면 30초 동안 여기서 반성하는 거다.', 'R-2: 감옥 안에서도 채팅은 할 수 있지.', `R-2: 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 주지. 이번엔 신중하게 걸라고!`][Math.floor(Math.random() * 3)]);
   }
   const dirOf = (dx, dy) => ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI - 90) / 45) % 8) + 8) % 8;
   function emote(e) { if (!e) return; send({ t: 'emote', e }); S.pop(); }
@@ -179,7 +179,7 @@
   }
   function onJailed() {
     S.jail(); setCam('follow');
-    toast(`파산! ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 동안 우리에 갇힙니다. 채팅은 할 수 있어요.`, 'bad');
+    toast(`파산했어요! ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 동안 감옥에 갇혀요. 채팅은 할 수 있어요.`, 'bad');
     if (betOpen()) closeBet();
   }
 

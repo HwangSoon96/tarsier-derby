@@ -198,14 +198,14 @@
         if (p) { p.jail = m.me.jail; p.eq = m.me.eq; if (m.x != null) { p.x = m.x; p.y = m.y; } }
         if (bought) { S.buy(); toast('구매 완료! 바로 장착했어요.', 'big'); }
         if (!was && m.me.jail) onJailed();
-        if (was && !m.me.jail) { S.free(); toast(`석방! 보석금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
+        if (was && !m.me.jail) { S.free(); toast(`풀려났어요! 재기 지원금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
         if (shopOpen()) renderShop();
         return;
       }
       case 'rock': return onRock(m);
       case 'chat': { const p = G.players.get(m.id); if (p) { p.bubble = m.text; p.bubbleUntil = performance.now() + 5500; } addChat(m.name, m.text, m.id === G.id); if (m.id !== G.id) S.chat(); return; }
       case 'emote': { const p = G.players.get(m.id); if (p) { p.emote = m.e; p.emoteAt = performance.now(); } return; }
-      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해 우리에 갇혔어요!`); } return; }
+      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해서 감옥에 갇혔어요!`); } return; }
       case 'toast': toast(m.text, m.kind); sysChat(m.text); return;
       case 'board': G.board = m.board; renderBoard(); return;
       case 'fix': { const p = G.players.get(G.id); if (p) { p.x = m.x; p.y = m.y; } return; }
@@ -308,7 +308,7 @@
     G.myBets = []; renderMyBets();
     const show = () => {
       if (m.mine) { openResult(m); const up = m.mine.pay > m.mine.stake; (up ? S.win : S.lose)(); if (up) coinFountain(Math.min(80, 10 + Math.floor((m.mine.pay - m.mine.stake) / 50))); }
-      else if (w) toast(`우승: ${w.num}번 ${w.name} · 관람 보너스 +${CFG.WATCH_BONUS}`);
+      else if (w) toast(`${w.num}번 ${w.name} 우승! 관람 보너스 +${CFG.WATCH_BONUS} 코인`);
       if (G.cam.mode === 'race') setTimeout(() => setCam('follow'), 2500);
     };
     setTimeout(show, rep ? Math.max(0, rep.goAt + rep.pb.wall * 1000 + 600 - now()) : 0);
@@ -319,11 +319,12 @@
     const rep = v.rep, t = v.t, say = (k, s) => { if (rep.said.has(k)) return; rep.said.add(k); ticker(s); };
     const byP = v.list.slice().sort((a, b) => b.p - a.p), lead = byP[0];
     if (t > 0.2) say('go', '출발했습니다!');
-    for (const [tick, i, kind] of rep.events) if (tick / rep.hz <= t) { const n = v.r.runners[i]; say('e' + tick + '-' + i, kind === 'cricket' ? `${n.num}번 ${n.name}, 귀뚜라미를 발견하고 멈췄습니다!` : kind === 'stumble' ? `${n.num}번 ${n.name} 휘청! 속도가 떨어집니다!` : `${n.num}번 ${n.name} 안경을 고쳐 쓰고 폭발적인 가속!`); }
-    if (lead.p < 1 && lead.i !== rep.lastLead && t > 3) { if (rep.lastLead >= 0) say('l' + Math.floor(t), `${lead.r.num}번 ${lead.r.name} 선두로 나섭니다!`); rep.lastLead = lead.i; }
-    if (lead.p > 0.5) say('lap', '두 번째 바퀴! 승부는 지금부터!');
-    if (lead.p > 0.76) say('fs', `마지막 직선! ${lead.r.num}번 ${lead.r.name}, 그 뒤를 ${byP[1].r.num}번이 쫓습니다!`);
-    if (rep.pb.slow && t > rep.pb.slowFrom) say('photo', '접전입니다! 사진 판정까지 갈까요?!');
+    for (const [tick, i, kind] of rep.events) if (tick / rep.hz <= t) { const n = v.r.runners[i]; say('e' + tick + '-' + i, kind === 'cricket' ? `${n.num}번 ${n.name}, 귀뚜라미를 보고 멈춰 섰습니다!` : kind === 'stumble' ? `${n.num}번 ${n.name}, 발이 꼬였습니다! 속도가 떨어집니다!` : `${n.num}번 ${n.name}, 안경을 고쳐 쓰고 무섭게 치고 나갑니다!`); }
+    // 선두 교체 중계는 4초에 한 번만 (같은 말 반복 방지)
+    if (lead.p < 0.95 && lead.i !== rep.lastLead && t > 3 && t - (rep.leadAt || 0) > 4) { if (rep.lastLead >= 0) say('l' + Math.floor(t), `${lead.r.num}번 ${lead.r.name}, 선두로 올라섭니다!`); rep.lastLead = lead.i; rep.leadAt = t; }
+    if (lead.p > 0.5) say('lap', '마지막 바퀴! 승부는 지금부터입니다!');
+    if (lead.p > 0.76) say('fs', `마지막 직선! 선두는 ${lead.r.num}번 ${lead.r.name}, ${byP[1].r.num}번이 바짝 뒤쫓습니다!`);
+    if (rep.pb.slow && t > rep.pb.slowFrom) say('photo', '대접전! 사진 판정까지 갈 수도 있습니다!');
     const w = rep.order[0];
-    if (t >= rep.times[w]) { const n = v.r.runners[w]; say('win', `${n.num}번 ${n.name} 1착!!`); if (!rep.finished) { rep.finished = true; S.finish(); confetti(); } }
+    if (t >= rep.times[w]) { const n = v.r.runners[w]; say('win', `${n.num}번 ${n.name}, 1착으로 결승선 통과!`); if (!rep.finished) { rep.finished = true; S.finish(); confetti(); } }
   }

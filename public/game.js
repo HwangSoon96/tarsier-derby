@@ -198,14 +198,14 @@
         if (p) { p.jail = m.me.jail; p.eq = m.me.eq; if (m.x != null) { p.x = m.x; p.y = m.y; } }
         if (bought) { S.buy(); toast('구매 완료! 바로 장착했어요.', 'big'); }
         if (!was && m.me.jail) onJailed();
-        if (was && !m.me.jail) { S.free(); toast(`석방! 보석금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
+        if (was && !m.me.jail) { S.free(); toast(`풀려났어요! 재기 지원금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
         if (shopOpen()) renderShop();
         return;
       }
       case 'rock': return onRock(m);
       case 'chat': { const p = G.players.get(m.id); if (p) { p.bubble = m.text; p.bubbleUntil = performance.now() + 5500; } addChat(m.name, m.text, m.id === G.id); if (m.id !== G.id) S.chat(); return; }
       case 'emote': { const p = G.players.get(m.id); if (p) { p.emote = m.e; p.emoteAt = performance.now(); } return; }
-      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해 우리에 갇혔어요!`); } return; }
+      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해서 감옥에 갇혔어요!`); } return; }
       case 'toast': toast(m.text, m.kind); sysChat(m.text); return;
       case 'board': G.board = m.board; renderBoard(); return;
       case 'fix': { const p = G.players.get(G.id); if (p) { p.x = m.x; p.y = m.y; } return; }
@@ -308,7 +308,7 @@
     G.myBets = []; renderMyBets();
     const show = () => {
       if (m.mine) { openResult(m); const up = m.mine.pay > m.mine.stake; (up ? S.win : S.lose)(); if (up) coinFountain(Math.min(80, 10 + Math.floor((m.mine.pay - m.mine.stake) / 50))); }
-      else if (w) toast(`우승: ${w.num}번 ${w.name} · 관람 보너스 +${CFG.WATCH_BONUS}`);
+      else if (w) toast(`${w.num}번 ${w.name} 우승! 관람 보너스 +${CFG.WATCH_BONUS} 코인`);
       if (G.cam.mode === 'race') setTimeout(() => setCam('follow'), 2500);
     };
     setTimeout(show, rep ? Math.max(0, rep.goAt + rep.pb.wall * 1000 + 600 - now()) : 0);
@@ -319,13 +319,14 @@
     const rep = v.rep, t = v.t, say = (k, s) => { if (rep.said.has(k)) return; rep.said.add(k); ticker(s); };
     const byP = v.list.slice().sort((a, b) => b.p - a.p), lead = byP[0];
     if (t > 0.2) say('go', '출발했습니다!');
-    for (const [tick, i, kind] of rep.events) if (tick / rep.hz <= t) { const n = v.r.runners[i]; say('e' + tick + '-' + i, kind === 'cricket' ? `${n.num}번 ${n.name}, 귀뚜라미를 발견하고 멈췄습니다!` : kind === 'stumble' ? `${n.num}번 ${n.name} 휘청! 속도가 떨어집니다!` : `${n.num}번 ${n.name} 안경을 고쳐 쓰고 폭발적인 가속!`); }
-    if (lead.p < 1 && lead.i !== rep.lastLead && t > 3) { if (rep.lastLead >= 0) say('l' + Math.floor(t), `${lead.r.num}번 ${lead.r.name} 선두로 나섭니다!`); rep.lastLead = lead.i; }
-    if (lead.p > 0.5) say('lap', '두 번째 바퀴! 승부는 지금부터!');
-    if (lead.p > 0.76) say('fs', `마지막 직선! ${lead.r.num}번 ${lead.r.name}, 그 뒤를 ${byP[1].r.num}번이 쫓습니다!`);
-    if (rep.pb.slow && t > rep.pb.slowFrom) say('photo', '접전입니다! 사진 판정까지 갈까요?!');
+    for (const [tick, i, kind] of rep.events) if (tick / rep.hz <= t) { const n = v.r.runners[i]; say('e' + tick + '-' + i, kind === 'cricket' ? `${n.num}번 ${n.name}, 귀뚜라미를 보고 멈춰 섰습니다!` : kind === 'stumble' ? `${n.num}번 ${n.name}, 발이 꼬였습니다! 속도가 떨어집니다!` : `${n.num}번 ${n.name}, 안경을 고쳐 쓰고 무섭게 치고 나갑니다!`); }
+    // 선두 교체 중계는 4초에 한 번만 (같은 말 반복 방지)
+    if (lead.p < 0.95 && lead.i !== rep.lastLead && t > 3 && t - (rep.leadAt || 0) > 4) { if (rep.lastLead >= 0) say('l' + Math.floor(t), `${lead.r.num}번 ${lead.r.name}, 선두로 올라섭니다!`); rep.lastLead = lead.i; rep.leadAt = t; }
+    if (lead.p > 0.5) say('lap', '마지막 바퀴! 승부는 지금부터입니다!');
+    if (lead.p > 0.76) say('fs', `마지막 직선! 선두는 ${lead.r.num}번 ${lead.r.name}, ${byP[1].r.num}번이 바짝 뒤쫓습니다!`);
+    if (rep.pb.slow && t > rep.pb.slowFrom) say('photo', '대접전! 사진 판정까지 갈 수도 있습니다!');
     const w = rep.order[0];
-    if (t >= rep.times[w]) { const n = v.r.runners[w]; say('win', `${n.num}번 ${n.name} 1착!!`); if (!rep.finished) { rep.finished = true; S.finish(); confetti(); } }
+    if (t >= rep.times[w]) { const n = v.r.runners[w]; say('win', `${n.num}번 ${n.name}, 1착으로 결승선 통과!`); if (!rep.finished) { rep.finished = true; S.finish(); confetti(); } }
   }
 
   // ---------- 입력 ----------
@@ -366,7 +367,7 @@
     if (typing()) document.activeElement.blur();
     const wx = G.cam.x + (e.clientX * dpr) / gp, wy = G.cam.y + (e.clientY * dpr) / gp, me = G.players.get(G.id);
     const n = NPCS.find((q) => Math.abs(q.x - wx) < 12 && wy > q.y - 34 && wy < q.y + 4);
-    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 를 누르세요.`); return; }
+    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 키를 눌러 주세요.`); return; }
     if (e.button === 0 || e.button === 2) { G.holdUse = e.button === 0; use(); }
   });
   addEventListener('mouseup', () => { G.holdUse = false; });
@@ -392,7 +393,7 @@
   function interact(n) {
     if (n.act === 'bet') openBet();
     else if (n.act === 'shop') openShop();
-    else toast(['R-2: 파산하면 30초간 여기서 반성하는 거다.', 'R-2: 우리 안에서도 채팅은 할 수 있지.', `R-2: 석방되면 보석금 ${CFG.BAILOUT}코인을 준다. 이번엔 신중하게!`][Math.floor(Math.random() * 3)]);
+    else toast(['R-2: 파산하면 30초 동안 여기서 반성하는 거다.', 'R-2: 감옥 안에서도 채팅은 할 수 있지.', `R-2: 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 주지. 이번엔 신중하게 걸라고!`][Math.floor(Math.random() * 3)]);
   }
   const dirOf = (dx, dy) => ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI - 90) / 45) % 8) + 8) % 8;
   function emote(e) { if (!e) return; send({ t: 'emote', e }); S.pop(); }
@@ -509,7 +510,7 @@
   }
   function onJailed() {
     S.jail(); setCam('follow');
-    toast(`파산! ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 동안 우리에 갇힙니다. 채팅은 할 수 있어요.`, 'bad');
+    toast(`파산했어요! ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 동안 감옥에 갇혀요. 채팅은 할 수 있어요.`, 'bad');
     if (betOpen()) closeBet();
   }
 
@@ -682,8 +683,8 @@
     if (it) {
       const o = it.ref, X = sx(o.x) / dpr, Y = sy(o.y - (it.kind === 'npc' ? 40 : 22)) / dpr;
       pr.style.left = X + 'px'; pr.style.top = Y + 'px';
-      const txt = it.kind === 'npc' ? `E ${o.name}` : 'E / 클릭  캐기';
-      if (pr._t !== txt) { pr.replaceChildren(h('b', null, 'E'), ' ' + txt.slice(2)); pr._t = txt; }
+      const txt = it.kind === 'npc' ? (o.act === 'bet' ? '베팅하기' : o.act === 'shop' ? '상점 둘러보기' : '말 걸기') : '캐기';
+      if (pr._t !== txt) { pr.replaceChildren(h('b', null, 'E'), ' ' + txt); pr._t = txt; }
       pr.classList.remove('hidden');
     } else pr.classList.add('hidden');
     // 중계 PIP: 선두 근접 화면
@@ -752,10 +753,10 @@
       const pct = Math.max(0, 100 * (r.betEnd - now()) / (r.betEnd - r.startAt)); bar.style.width = pct.toFixed(1) + '%';
       // 러너 마커
       if (r.runners) { bar.replaceChildren(); r.runners.forEach((q, i) => { const m = h('i', { style: `left:${(r.pool[i] / Math.max(1, r.pool.reduce((a,b)=>a+b,0))) * 100}%;background:${q.color}` }, q.num); bar.appendChild(m); }); }
-    } else if (r.phase === 'closed') { e1.textContent = `경주 #${r.id % 1000}`; e2.textContent = '출발 대기'; bar.style.width = '100%'; bar.replaceChildren(); }
+    } else if (r.phase === 'closed') { e1.textContent = `경주 #${r.id % 1000}`; e2.textContent = '곧 출발합니다'; bar.style.width = '100%'; bar.replaceChildren(); }
     else if (r.phase === 'race') { e1.textContent = '경주 진행 중!'; e2.textContent = ''; bar.style.width = '100%'; bar.replaceChildren(); }
-    else if (r.phase === 'result') { e1.textContent = '결과 발표'; e2.textContent = `다음 ${mmss(r.next - now())}`; bar.style.width = '0%'; bar.replaceChildren(); }
-    else { e1.textContent = `경주 #${r.id % 1000}`; e2.textContent = `대기 ${mmss(r.next - now())}`; bar.style.width = '0%'; bar.replaceChildren(); }
+    else if (r.phase === 'result') { e1.textContent = '경주 종료'; e2.textContent = `다음 경주까지 ${mmss(r.next - now())}`; bar.style.width = '0%'; bar.replaceChildren(); }
+    else { e1.textContent = `경주 #${r.id % 1000}`; e2.textContent = `다음 경주까지 ${mmss(r.next - now())}`; bar.style.width = '0%'; bar.replaceChildren(); }
   }
   function renderBoard() {
     const ol = $('board-list'); ol.replaceChildren();
@@ -782,7 +783,7 @@
   // ---------- 베팅 ----------
   const betOpen = () => !$('bet').classList.contains('hidden');
   function openBet() {
-    if (!G.race || G.race.phase === 'void') return toast('지금은 베팅 시간이 아니에요.');
+    if (!G.race || G.race.phase === 'void') return toast('지금은 베팅할 수 없어요. 다음 경주를 기다려 주세요.');
     if (G.me && G.me.jail > now()) return toast('감옥에서는 베팅할 수 없어요.');
     $('bet').classList.remove('hidden'); G.betType = 'win'; G.pick = [];
     setBetTab('win'); renderRunners(); renderSlip(); S.ui();
@@ -819,7 +820,7 @@
         pcOut,
         h('div', null,
           h('div', { class: 'nm' }, q.name),
-          h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · ${cond.ko}`),
+          h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · 컨디션 ${cond.ko}`),
           statsEl
         ),
         h('div', null,
@@ -843,13 +844,13 @@
     if (closed) { $('place').disabled = true; return; }
     const ready = G.betType === 'exacta' ? G.pick.length === 2 : G.pick.length === 1;
     if (!ready) {
-      sp.textContent = G.betType === 'exacta' ? `1등·2등 순서대로 2마리를 고르세요 (${G.pick.length}/2)` : '출전 안경원숭이를 고르세요 (숫자키 1~6)';
+      sp.textContent = G.betType === 'exacta' ? `1착과 2착을 순서대로 골라 주세요 (${G.pick.length}/2)` : '응원할 안경원숭이를 골라 주세요 (숫자 키 1~6)';
       $('payout').textContent = ''; $('place').disabled = true; return;
     }
     const odds = G.betType === 'exacta' ? (r.odds ? (r.odds.exacta[G.pick[0] + '-' + G.pick[1]] || 0) : 0) : r.odds ? r.odds[G.betType][G.pick[0]] : 0;
     const amt = Math.max(0, +$('amt').value || 0);
     sp.textContent = G.betType === 'exacta' ? `쌍승 ${r.runners[G.pick[0]].num}→${r.runners[G.pick[1]].num} × ${odds.toFixed(2)}` : `${G.betType === 'win' ? '단승' : '연승'} ${r.runners[G.pick[0]].num}번 × ${odds.toFixed(2)}`;
-    $('payout').textContent = amt > 0 ? `예상 ${fmt(Math.floor(amt * odds))}` : '';
+    $('payout').textContent = amt > 0 ? `적중 시 ${fmt(Math.floor(amt * odds))} 코인` : '';
     $('place').disabled = !amt || amt < CFG.MIN_BET || !G.me || amt > G.me.coins;
   }
   function renderBet() { renderRunners(); renderSlip(); }
@@ -884,7 +885,7 @@
     const body = $('modal-body'), p = G.me; if (!p) return; body.replaceChildren();
     body.appendChild(h('h2', null, '화성 잡화상'));
     for (const slot of SLOTS) {
-      body.appendChild(h('h3', null, slot === 'hat' ? '모자' : slot === 'trail' ? '꼬리' : slot === 'ride' ? '탈것' : '펫'));
+      body.appendChild(h('h3', null, slot === 'hat' ? '모자' : slot === 'trail' ? '발자취' : slot === 'ride' ? '탈것' : '펫'));
       const grid = h('div', { class: 'grid' });
       for (const it of ITEMS.filter((x) => x.slot === slot)) {
         const owned = p.owned.includes(it.id), eq = p.eq[slot] === it.id;
@@ -899,12 +900,12 @@
           onclick: () => {
             if (!owned && p.coins < it.price) return toast('코인이 부족해요.');
             if (owned) send({ t: 'equip', slot, item: eq ? null : it.id });
-            else { if (!card._confirm) { card._confirm = true; card.querySelector('.price').textContent = '정말 구매?'; setTimeout(() => { card._confirm = false; if ($('modal')._mode === 'shop') renderShop(); }, 2500); return; } send({ t: 'buy', item: it.id }); }
+            else { if (!card._confirm) { card._confirm = true; card.querySelector('.price').textContent = '한 번 더 누르면 구매'; setTimeout(() => { card._confirm = false; if ($('modal')._mode === 'shop') renderShop(); }, 2500); return; } send({ t: 'buy', item: it.id }); }
           }
         },
           A.outline(ic),
           h('div', null, it.name),
-          it.speed ? h('small', null, `속도 ×${it.speed}`) : null,
+          it.speed ? h('small', null, `이동 속도 ×${it.speed}`) : null,
           h('div', { class: 'price' }, owned ? (eq ? '장착 중' : '장착하기') : fmt(it.price))
         );
         grid.appendChild(card);
@@ -922,7 +923,7 @@
     const ol = h('ol', { class: 'big-board' });
     for (const p of G.board) {
       ol.appendChild(h('li', { class: G.me && p.name === G.me.name ? 'me' : '' },
-        h('span', null, p.name), h('span', null, `${fmt(p.coins)} 코인`), p.best ? h('small', null, `최고 ${fmt(p.best)}`) : null
+        h('span', null, p.name), h('span', null, `${fmt(p.coins)} 코인`), p.best ? h('small', null, `최고 당첨 ${fmt(p.best)}`) : null
       ));
     }
     body.appendChild(ol); $('modal').classList.remove('hidden'); S.ui();
@@ -932,16 +933,16 @@
     body.appendChild(h('h2', null, '안경원숭이 더비 · 도움말'));
     const sec = (t) => body.appendChild(h('h3', null, t));
     sec('베팅');
-    body.appendChild(h('p', null, '5분 주기로 경주가 열립니다. 마권 판매 로봇(BET-9)에게 다가가 E 를 누르거나, B 키로 베팅창을 엽니다.'));
-    body.appendChild(h('p', null, '단승(1등 맞추기), 연승(2등 안), 쌍승(1·2등 순서) 세 종류가 있습니다.'));
+    body.appendChild(h('p', null, '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 E 키를 누르거나 B 키로 베팅 창을 열 수 있어요.'));
+    body.appendChild(h('p', null, '단승은 1착, 연승은 2착 이내, 쌍승은 1착과 2착을 순서대로 맞히는 베팅이에요.'));
     sec('광석 채굴');
-    body.appendChild(h('p', null, '맵 양쪽의 바위를 E / 스페이스 / 클릭으로 캁니다. 3번 때리면 코인을 얻고, 4% 확률로 보석이 나옵니다.'));
+    body.appendChild(h('p', null, '맵 양쪽의 바위는 E 키, 스페이스바, 클릭으로 캘 수 있어요. 세 번 내리치면 코인을 얻고, 4% 확률로 보석이 나와요.'));
     sec('상점');
-    body.appendChild(h('p', null, '잡화상 쿠쿠(I)에서 모자·꼬리·탈것·펫을 살 수 있습니다.'));
+    body.appendChild(h('p', null, '잡화상 쿠쿠에게 가거나 I 키를 눌러 모자, 발자취, 탈것, 펫을 살 수 있어요.'));
     sec('파산');
-    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET} 미만이면 파산 처리. 30초 동안 우리에 갇힙니다. 석방되면 보석금 ${CFG.BAILOUT} 코인을 받습니다.`));
+    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 30초 동안 감옥에 갇혀요. 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
     sec('단축키');
-    body.appendChild(h('p', null, 'WASD/화살표: 이동 · Shift: 달리기 · E/스페이스: 사용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
+    body.appendChild(h('p', null, 'WASD/방향키: 이동 · Shift: 달리기 · E/스페이스: 상호작용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
     $('modal').classList.remove('hidden'); S.ui();
   }
   function openResult(m) {
@@ -958,8 +959,8 @@
     body.appendChild(podium);
     // 내 성적
     if (m.mine) {
-      body.appendChild(h('h3', null, '내 마권'));
-      for (const b of m.mine.bets) body.appendChild(h('div', { class: b.pay > 0 ? 'win' : '' }, `${betLabel(b)} · ${fmt(b.amount)} → ${b.pay > 0 ? '+' + fmt(b.pay) : '꽝'}`));
+      body.appendChild(h('h3', null, '내 베팅'));
+      for (const b of m.mine.bets) body.appendChild(h('div', { class: b.pay > 0 ? 'win' : '' }, `${betLabel(b)} · ${fmt(b.amount)} → ${b.pay > 0 ? '+' + fmt(b.pay) : '미적중'}`));
       const net = m.mine.pay - m.mine.stake;
       body.appendChild(h('div', { class: 'net' + (net >= 0 ? ' plus' : ' minus') }, `순이익: ${net >= 0 ? '+' : ''}${fmt(net)} 코인`));
     }
@@ -979,7 +980,7 @@
     }
   });
   function toggleMute() { AU.setMuted(!AU.muted); $('mute-btn').classList.toggle('off', AU.muted); S.ui(); }
-  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '자동 중계 켜짐' : '자동 중계 꺼짐'); }
+  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '경주 자동 중계를 켰어요.' : '경주 자동 중계를 껏어요.'); }
 
   // 이모트 바
   const emoteBar = $('emotes');
@@ -1039,7 +1040,7 @@
     $('title').classList.add('hidden'); $('hud').classList.remove('hidden');
     setCam('follow'); resize(); bake();
     $('coins').textContent = fmt(G.me.coins);
-    if (G.me.jail > now()) toast(`수감 중입니다. ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요. 채팅은 할 수 있어요.`, 'bad');
+    if (G.me.jail > now()) toast(`아직 감옥이에요. ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요. 채팅은 할 수 있어요.`, 'bad');
     S.ui();
     AU.setCrowd(0.15);
   }
@@ -1074,7 +1075,7 @@
   // ---------- 부팅 ----------
   G.cam.mode = 'race'; resize(); bake(); titlePractice();
   // /status 로 접속자 수 가져오기
-  fetch('/status').then((r) => r.ok ? r.json() : null).then((d) => { if (d) $('online').textContent = `${d.online}명 접속 중 · 다음 경주 ${mmss(d.nextRace - Date.now())}`; }).catch(() => {});
+  fetch('/status').then((r) => r.ok ? r.json() : null).then((d) => { if (d) $('online').textContent = `지금 ${d.online}명 접속 중 · 다음 경주까지 ${mmss(d.nextRace - Date.now())}`; }).catch(() => {});
   requestAnimationFrame(frame);
 
   // 테스트 훅

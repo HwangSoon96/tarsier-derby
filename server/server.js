@@ -155,7 +155,7 @@ function createServer(opts = {}) {
       if (e && e.pay - e.stake > 0 && (!bigWin || e.pay - e.stake > bigWin.net)) bigWin = { name: s.p.name, net: e.pay - e.stake };
       send(s, { t: 'settle', id: r.id, order: r.result.order, mine: e || null, me: me(s.p) });
     }
-    if (bigWin && bigWin.net >= 1000) broadcast({ t: 'toast', kind: 'big', text: `${bigWin.name} 님이 ${bigWin.net.toLocaleString()} 코인을 땄습니다!` });
+    if (bigWin && bigWin.net >= 1000) broadcast({ t: 'toast', kind: 'big', text: `${bigWin.name} 님이 ${bigWin.net.toLocaleString()} 코인을 땄어요!` });
     for (const h of per.keys()) checkBankrupt(db.profiles[h]);
     markDirty();
     log('정산', r.id, '1위', STABLE[r.card[a].stable].name, '베팅', r.bets.length);
@@ -202,7 +202,7 @@ function createServer(opts = {}) {
     const name = cleanText(m.name, CFG.NAME_MAX);
     if ([...name].length < CFG.NAME_MIN || !W.NAME_RE.test(name) || BANNED.some((w) => name.includes(w))) return send(s, { t: 'err', code: 'name', text: '닉네임은 2~10자 한글·영문·숫자·_- 만 가능해요.' });
     if (m.g !== 'm' && m.g !== 'f') return send(s, { t: 'err', code: 'bad', text: '성별을 선택해 주세요.' });
-    if (!isInt(m.seed, 0, 0xffffffff)) return send(s, { t: 'err', code: 'bad', text: '잘못된 아바타' });
+    if (!isInt(m.seed, 0, 0xffffffff)) return send(s, { t: 'err', code: 'bad', text: '아바타 정보가 올바르지 않아요.' });
     let token = typeof m.token === 'string' && /^[0-9a-f]{64}$/.test(m.token) ? m.token : null;
     let fresh = false;
     if (!token) { token = crypto.randomBytes(32).toString('hex'); fresh = true; }
@@ -216,7 +216,7 @@ function createServer(opts = {}) {
     } else { p.name = name; p.gender = m.g; p.seed = m.seed; }
     p.seen = Date.now(); p.h = h;
     const old = byToken.get(h);
-    if (old && old !== s) { send(old, { t: 'kicked', text: '다른 곳에서 접속했어요.' }); old.ws.close(4001, 'dup'); dropSession(old); }
+    if (old && old !== s) { send(old, { t: 'kicked', text: '다른 창에서 같은 계정으로 접속해서 연결이 끊겼어요.' }); old.ws.close(4001, 'dup'); dropSession(old); }
     s.p = p; s.h = h; byToken.set(h, s);
     if (p.jail > Date.now()) [s.x, s.y] = W.clampCage(W.ZONES.cageIn.x + 44, W.ZONES.cageIn.y + 40);
     else { const z = W.ZONES.spawn; s.x = z.x + 8 + Math.random() * (z.w - 16); s.y = z.y + 8 + Math.random() * (z.h - 16); }
@@ -281,9 +281,9 @@ function createServer(opts = {}) {
     if (m.type === 'win' || m.type === 'place') { if (!isInt(m.key, 0, n - 1)) return; key = m.key; odds = race.odds[m.type][key]; }
     else if (m.type === 'exacta') { if (!Array.isArray(m.key) || m.key.length !== 2 || !isInt(m.key[0], 0, n - 1) || !isInt(m.key[1], 0, n - 1) || m.key[0] === m.key[1]) return; key = m.key[0] + '-' + m.key[1]; odds = race.odds.exacta[key]; }
     else return;
-    if (!isInt(m.amount, CFG.MIN_BET, 1e12)) return send(s, { t: 'err', code: 'amount', text: `최소 ${CFG.MIN_BET} 코인부터 걸 수 있어요.` });
+    if (!isInt(m.amount, CFG.MIN_BET, 1e12)) return send(s, { t: 'err', code: 'amount', text: `최소 ${CFG.MIN_BET} 코인부터 베팅할 수 있어요.` });
     if (m.amount > s.p.coins) return send(s, { t: 'err', code: 'funds', text: '코인이 부족해요.' });
-    if (race.bets.filter((b) => b.h === s.h).length >= CFG.MAX_BETS_PER_RACE) return send(s, { t: 'err', code: 'limit', text: '한 경주에 걸 수 있는 횟수를 넘었어요.' });
+    if (race.bets.filter((b) => b.h === s.h).length >= CFG.MAX_BETS_PER_RACE) return send(s, { t: 'err', code: 'limit', text: `한 경주에는 최대 ${CFG.MAX_BETS_PER_RACE}번까지 베팅할 수 있어요.` });
     s.p.coins -= m.amount; markDirty();
     race.bets.push({ h: s.h, type: m.type, key, amount: m.amount, odds });
     if (m.type === 'exacta') { race.pool[m.key[0]] += m.amount / 2; race.pool[m.key[1]] += m.amount / 2; } else race.pool[key] += m.amount;

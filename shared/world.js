@@ -44,14 +44,14 @@
     north: R(300, 16, 360, 150)
   };
   const NPCS = [
-    { id: 'bookie', name: '마권 판매 로봇 BET-9', x: 272, y: 450, act: 'bet' },
+    { id: 'bookie', name: '베팅 로봇 BET-9', x: 272, y: 450, act: 'bet' },
     { id: 'shop', name: '화성 잡화상 쿠쿠', x: 144, y: 372, act: 'shop' },
     { id: 'guard', name: '보안관 R-2', x: 790, y: 470, act: 'talk' }
   ];
   // 이동 불가 직사각형 (건물·우리 벽·장식물)
   const SOLIDS = [
     R(100, 302, 88, 60),            // 상점 돔
-    R(232, 440, 80, 30),            // 마권 부스 (로봇 + 카운터)
+    R(232, 440, 80, 30),            // 베팅 부스 (로봇 + 카운터)
     R(800, 400, 112, 10), R(800, 478, 112, 10), R(800, 400, 10, 88), R(902, 400, 10, 88), // 우리 벽
     R(318, 40, 84, 50), R(430, 30, 100, 64), R(560, 44, 84, 46),                         // 북쪽 거주 돔
     R(700, 30, 26, 64),             // 로켓
@@ -83,11 +83,11 @@
     { id: 'h_helmet', slot: 'hat', name: '우주 헬멧', price: 2500 },
     { id: 'h_antenna', slot: 'hat', name: '외계인 더듬이', price: 3500 },
     { id: 'h_crown', slot: 'hat', name: '황금 왕관', price: 9000 },
-    { id: 't_dust', slot: 'trail', name: '먼지 꼬리', price: 500 },
-    { id: 't_heart', slot: 'trail', name: '하트 꼬리', price: 1500 },
-    { id: 't_spark', slot: 'trail', name: '반짝이 꼬리', price: 2000 },
-    { id: 't_fire', slot: 'trail', name: '불꽃 꼬리', price: 4000 },
-    { id: 't_rainbow', slot: 'trail', name: '무지개 꼬리', price: 7000 },
+    { id: 't_dust', slot: 'trail', name: '먼지 발자취', price: 500 },
+    { id: 't_heart', slot: 'trail', name: '하트 발자취', price: 1500 },
+    { id: 't_spark', slot: 'trail', name: '반짝이 발자취', price: 2000 },
+    { id: 't_fire', slot: 'trail', name: '불꽃 발자취', price: 4000 },
+    { id: 't_rainbow', slot: 'trail', name: '무지개 발자취', price: 7000 },
     { id: 'r_board', slot: 'ride', name: '호버보드', price: 3000, speed: 1.12 },
     { id: 'r_rover', slot: 'ride', name: '미니 로버', price: 6000, speed: 1.2 },
     { id: 'r_cricket', slot: 'ride', name: '왕귀뚜라미', price: 8000, speed: 1.22 },

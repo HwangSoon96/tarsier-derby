@@ -33,8 +33,8 @@
   <div id="board-box" class="chip"><div class="bh">부자 순위 <span id="online-n"></span></div><ol id="board-list"></ol></div>
   <div id="ticker"></div>
   <div id="toasts"></div>
-  <div id="chat"><div id="chat-log"></div><input id="chat-in" maxlength="80" autocomplete="off" placeholder="Enter 로 채팅"></div>
-  <div id="mybets" class="chip hidden"><div class="bh">내 마권</div><div id="mybets-list"></div></div>
+  <div id="chat"><div id="chat-log"></div><input id="chat-in" maxlength="80" autocomplete="off" placeholder="Enter 키로 채팅"></div>
+  <div id="mybets" class="chip hidden"><div class="bh">내 베팅</div><div id="mybets-list"></div></div>
   <div id="bar">
     <button data-act="bet" class="key">B<span>베팅</span></button>
     <button data-act="shop" class="key">I<span>상점</span></button>
@@ -50,13 +50,13 @@
 
 <div id="bet" class="drawer hidden">
   <div class="dh"><b id="bet-title">베팅</b><span id="bet-count"></span><button class="x" data-close="bet">×</button></div>
-  <div class="tabs" id="bet-tabs"><button data-type="win" class="on">단승 <small>1등</small></button><button data-type="place">연승 <small>2등 안</small></button><button data-type="exacta">쌍승 <small>1·2등 순서</small></button></div>
+  <div class="tabs" id="bet-tabs"><button data-type="win" class="on">단승 <small>1착</small></button><button data-type="place">연승 <small>2착 이내</small></button><button data-type="exacta">쌍승 <small>1·2착 순서</small></button></div>
   <div id="runners"></div>
   <div id="slip">
     <div id="slip-pick" class="muted">출전 안경원숭이를 고르세요 (숫자키 1~6)</div>
     <div class="row"><input id="amt" type="number" min="10" step="10" inputmode="numeric"><span id="payout"></span></div>
-    <div class="row chips"><button data-add="10">+10</button><button data-add="50">+50</button><button data-add="100">+100</button><button data-add="500">+500</button><button data-add="half">절반</button><button data-add="all">올인</button><button data-add="0">0</button></div>
-    <div class="row"><button id="place" class="big">마권 구매</button><button id="cancel-all">전부 취소</button></div>
+    <div class="row chips"><button data-add="10">+10</button><button data-add="50">+50</button><button data-add="100">+100</button><button data-add="500">+500</button><button data-add="half">절반</button><button data-add="all">올인</button><button data-add="0">최소</button></div>
+    <div class="row"><button id="place" class="big">베팅하기</button><button id="cancel-all">모두 취소</button></div>
     <div id="slip-closed" class="hidden">베팅 마감</div>
   </div>
 </div>
