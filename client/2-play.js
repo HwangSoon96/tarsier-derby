@@ -28,7 +28,7 @@
     if (MOVE_KEYS.includes(e.code) && G.cam.mode === 'race' && !G.cam.target) { G.watch = false; setCam('follow'); }
   });
   addEventListener('keyup', (e) => G.keys.delete(e.code));
-  addEventListener('blur', () => { G.keys.clear(); G.holdUse = false; });
+  addEventListener('blur', () => { G.keys.clear(); G.holdUse = false; G.joy = null; });
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   view.addEventListener('mousedown', (e) => {
     AU.init();
@@ -75,7 +75,8 @@
       else send({ t: 'sell' });
     }
   }
-  const dirOf = (dx, dy) => ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI - 90) / 45) % 8) + 8) % 8;
+  // 화면 방향(dx,dy) → 스프라이트 방향 0↓ 1↘ 2→ 3↗ 4↑ 5↖ 6← 7↙ (아래=0에서 시계 반대 방향으로 45°씩)
+  const dirOf = (dx, dy) => ((Math.round((90 - Math.atan2(dy, dx) * 180 / Math.PI) / 45) % 8) + 8) % 8;
   function emote(e) { if (!e) return; send({ t: 'emote', e }); S.pop(); }
   function sendChat() { const el = $('chat-in'), v = el.value.trim(); if (v) send({ t: 'chat', text: v }); el.value = ''; el.blur(); }
 
@@ -100,15 +101,21 @@
       const k = G.keys;
       if (k.has('KeyA') || k.has('ArrowLeft')) dx--; if (k.has('KeyD') || k.has('ArrowRight')) dx++;
       if (k.has('KeyW') || k.has('ArrowUp')) dy--; if (k.has('KeyS') || k.has('ArrowDown')) dy++;
+      if (!dx && !dy && G.joy) { dx = G.joy.x; dy = G.joy.y; } // 모바일 조이스틱: 360° 아날로그 방향
     }
-    const run = !!(dx || dy) && (G.keys.has('ShiftLeft') || G.keys.has('ShiftRight'));
+    const run = !!(dx || dy) && (G.keys.has('ShiftLeft') || G.keys.has('ShiftRight') || !!(G.joy && G.joy.run));
     if (dx || dy) {
       const n = Math.hypot(dx, dy); dx /= n; dy /= n; // 대각선 속도 정규화
       const ride = p.eq.ride && ITEM[p.eq.ride] ? ITEM[p.eq.ride].speed : 1;
       const v = CFG.WALK * ride * (run ? CFG.RUN_MULT : 1) * (p.act >= 0 ? 0.35 : 1) * dt, ox = p.x, oy = p.y;
       if (jailed) [p.x, p.y] = W.clampJail(p.x + dx * v, p.y + dy * v);
       else { if (!W.blocked(p.x + dx * v, p.y)) p.x += dx * v; if (!W.blocked(p.x, p.y + dy * v)) p.y += dy * v; }
-      if (p.act < 0) p.d = dirOf(dx, dy);
+      // 대각선에서 손을 뗄 때 두 키가 동시에 안 떨어져 마지막 한 프레임에 몸이 옆으로 홱 도는 것 방지:
+      // 대각선이 끝난 지 0.1초 안의 단일 방향은 진행은 하되 방향은 유지
+      // (키보드 전용 — 조이스틱은 아날로그라 해당 없음)
+      const tnow = performance.now(), keyDiag = !G.joy && dx && dy;
+      if (keyDiag) G.diagAt = tnow;
+      if (p.act < 0 && (G.joy || keyDiag || tnow - (G.diagAt || 0) > 100)) p.d = dirOf(dx, dy);
       const moved = Math.hypot(p.x - ox, p.y - oy);
       p.walk += moved / (run ? 26 : 22); p.mv = moved > 0.01; p.run = run; p.speed = moved / dt;
     } else { p.mv = false; p.run = false; p.speed = 0; }
@@ -258,24 +265,17 @@
         if (t.identifier !== joyId) continue;
         const dx = t.clientX - baseX, dy = t.clientY - baseY;
         drawJoy(dx, dy);
-        // 터치 이동량 → 키 시뮬레이션(임계값 12px)
-        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
-        if (Math.hypot(dx, dy) > 12) {
-          // 8방향 매핑: 22.5° 구간마다 키 조합
-          if (dx < -10) G.keys.add('ArrowLeft');
-          if (dx > 10) G.keys.add('ArrowRight');
-          if (dy < -10) G.keys.add('ArrowUp');
-          if (dy > 10) G.keys.add('ArrowDown');
-          if (Math.hypot(dx, dy) > 50) G.keys.add('ShiftLeft');
-        }
+        // 끈 방향 그대로(360°) 이동. 12px 안쪽은 흔들림 무시, 50px 넘게 끌면 달리기
+        const len = Math.hypot(dx, dy);
+        G.joy = len > 12 ? { x: dx / len, y: dy / len, run: len > 50 } : null;
+        if (G.joy && G.cam.mode === 'race' && !G.cam.target) { G.watch = false; setCam('follow'); }
       }
     };
     jz.addEventListener('touchmove', (e) => { e.preventDefault(); joyMove(e); }, { passive: false });
     const joyEnd = (e) => {
       for (const t of e.changedTouches) {
         if (t.identifier !== joyId) continue;
-        joyId = null; jc.classList.remove('on');
-        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
+        joyId = null; jc.classList.remove('on'); G.joy = null;
       }
     };
     jz.addEventListener('touchend', joyEnd); jz.addEventListener('touchcancel', joyEnd);

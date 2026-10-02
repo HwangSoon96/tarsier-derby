@@ -97,41 +97,45 @@
     renderRunners(); renderSlip();
   }
   $('bet-tabs').addEventListener('click', (e) => { if (e.target.dataset.type) setBetTab(e.target.dataset.type); });
+  // 주자 목록: 경주·탭이 바뀔 때만 행을 새로 만들고, 그 외(배당·지분 갱신, 선택)는 글자·클래스만 바꾼다.
+  // 매번 다시 만들면 폰에서 초상화 외곽선 계산(GPU 읽기)이 반복돼 탭이 늦게 먹고, 누르는 도중 행이 바뀌어 탭이 사라진다.
+  const copyCanvas = (src) => { const [c, g] = A.mk(src.width, src.height); g.drawImage(src, 0, 0); return c; };
   function renderRunners() {
-    const el = $('runners'); el.replaceChildren();
-    const r = G.race; if (!r || !r.runners) return;
+    const el = $('runners'), r = G.race;
+    if (!r || !r.runners) { el.replaceChildren(); el._key = null; return; }
     const closed = r.phase !== 'betting';
     $('bet-title').textContent = `경주 #${r.id % 1000} 베팅`; $('bet-count').textContent = ` · 마감 ${mmss(r.betEnd - now())}`;
     $('slip-closed').classList.toggle('hidden', !closed);
+    const key = r.id + '|' + G.betType;
+    if (el._key !== key) {
+      el._key = key; el._rows = [];
+      el.replaceChildren(...r.runners.map((q, i) => {
+        const cond = COND.find((c) => c.k === q.cond) || COND[2];
+        const statBar = (val, col) => h('i', null, h('b', { style: `width:${val}%;background:${col}` }));
+        const odds = h('div', { class: 'odds' }), share = h('div', { class: 'share' }), badge = h('span', { class: 'badge hidden' });
+        const row = h('div', { class: 'rn', onclick: () => pickRunner(i) },
+          badge,
+          h('div', { class: 'num', style: `background:${q.color}` }, String(q.num)),
+          copyCanvas(portrait(q.color, q.num, false)),
+          h('div', null,
+            h('div', { class: 'nm' }, q.name),
+            h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · 컨디션 ${cond.ko}`),
+            h('div', { class: 'stats' }, statBar(q.spd, '#ff6a5a'), statBar(q.sta, '#3b78d8'), statBar(q.gut, '#e8b830'), statBar(q.luck, '#4caf50'))),
+          h('div', null, odds, share));
+        el._rows.push({ row, odds, share, badge });
+        return row;
+      }));
+    }
     const totalPool = Math.max(1, r.pool.reduce((a, b) => a + b, 0));
-    r.runners.forEach((q, i) => {
-      const cond = COND.find((c) => c.k === q.cond) || COND[2];
-      const sel = G.pick.includes(i), pickN = G.pick.indexOf(i);
-      const oVal = r.odds ? (G.betType === 'exacta' ? null : r.odds[G.betType][i]) : null;
-      // 초상화 캠버스
-      const [pc, pg] = A.mk(28, 30); A.tarsierFront(pg, 14, 28, q.color, q.num, false);
-      const pcOut = A.outline(pc);
-      // 능력치 바
-      const statBar = (label, val, col) => {
-        const bar = h('i'); const inner = h('b', { style: `width:${val}%;background:${col}` }); bar.appendChild(inner);
-        return bar;
-      };
-      const statsEl = h('div', { class: 'stats' }, statBar('SPD', q.spd, '#ff6a5a'), statBar('STA', q.sta, '#3b78d8'), statBar('GUT', q.gut, '#e8b830'), statBar('LCK', q.luck, '#4caf50'));
-      const row = h('div', { class: 'rn' + (sel ? ' sel' : ''), onclick: () => pickRunner(i) },
-        h('div', { class: 'num', style: `background:${q.color}` }, String(q.num)),
-        pcOut,
-        h('div', null,
-          h('div', { class: 'nm' }, q.name),
-          h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · 컨디션 ${cond.ko}`),
-          statsEl
-        ),
-        h('div', null,
-          h('div', { class: 'odds' }, oVal != null ? oVal.toFixed(2) : (G.betType === 'exacta' && sel ? `${pickN + 1}착` : '–')),
-          h('div', { class: 'share' }, `${(r.pool[i] / totalPool * 100).toFixed(0)}%`)
-        )
-      );
-      if (sel && G.betType === 'exacta') row.insertBefore(h('span', { class: 'badge' }, `${pickN + 1}착`), row.firstChild);
-      el.appendChild(row);
+    el._rows.forEach(({ row, odds, share, badge }, i) => {
+      const sel = G.pick.includes(i), pickN = G.pick.indexOf(i), ex = G.betType === 'exacta';
+      const oVal = r.odds && !ex ? r.odds[G.betType][i] : null;
+      row.classList.toggle('sel', sel);
+      const ot = oVal != null ? oVal.toFixed(2) : ex && sel ? `${pickN + 1}착` : '–';
+      if (odds.textContent !== ot) odds.textContent = ot;
+      const st = `${(r.pool[i] / totalPool * 100).toFixed(0)}%`;
+      if (share.textContent !== st) share.textContent = st;
+      badge.classList.toggle('hidden', !(sel && ex)); badge.textContent = sel && ex ? `${pickN + 1}착` : '';
     });
   }
   function pickRunner(i) {
@@ -143,7 +147,7 @@
   }
   function renderSlip() {
     const r = G.race, closed = !r || r.phase !== 'betting', sp = $('slip-pick');
-    if (closed) { $('place').disabled = true; return; }
+    if (closed) { $('place').disabled = true; sp.textContent = ''; $('payout').textContent = ''; return; }
     const ready = G.betType === 'exacta' ? G.pick.length === 2 : G.pick.length === 1;
     if (!ready) {
       sp.textContent = G.betType === 'exacta' ? `1착과 2착을 순서대로 골라 주세요 (${G.pick.length}/2)` : (TOUCH ? '응원할 안경원숭이를 골라 주세요' : '응원할 안경원숭이를 골라 주세요 (숫자 키 1~6)');
@@ -395,6 +399,6 @@
 
   // 테스트 훅
   // 자동화 테스트용 조회 훅 (읽기 전용 요약)
-  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast,
+  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast, personSprite, view: () => ({ VW, VH, gp }),
     state: () => { const p = G.players.get(G.id); return p && G.me ? { x: p.x, y: p.y, jail: G.me.jail > now(), rice: G.me.rice || 0, coins: G.me.coins, riceList: G.rice.map((r) => ({ x: r.x, y: r.y, ready: r.at <= now() })) } : null; } };
 })();

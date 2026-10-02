@@ -156,9 +156,9 @@ input:focus { border-color: var(--hi); }
 /* 터치 기기: 키보드 바 숨기고 HUD를 세이프 영역에 맞춤 */
 @media (pointer: coarse) {
   /* 메뉴 바: 키 글자·이모트 없이 글자 버튼만, 화면 오른쪽 위 세로 줄 (조이스틱·행동 버튼과 안 겹침) */
-  #bar { left: auto; right: calc(8px + env(safe-area-inset-right, 0px)); top: calc(4.6em + env(safe-area-inset-top, 0px)); bottom: auto; transform: none; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; }
-  #bar .key { justify-content: center; min-height: 40px; min-width: 56px; padding: 0 8px; font-size: 0; }
-  #bar .key span { font-size: 13px; }
+  #bar { left: auto; right: calc(6px + env(safe-area-inset-right, 0px)); top: calc(56px + env(safe-area-inset-top, 0px)); bottom: auto; transform: none; flex-direction: column; align-items: stretch; gap: 3px; padding: 3px; background: rgba(26,16,12,.6); }
+  #bar .key { display: flex; justify-content: center; align-items: center; height: 34px; min-width: 48px; padding: 0 6px; font-size: 0; }
+  #bar .key span { font-size: 12px; margin: 0; }
   #bar .sep, #bar #emotes { display: none; }
   /* 채팅: 기록만 보이고, 채팅 버튼을 누르면 입력칸이 화면 아래에 나타남 */
   #chat { left: calc(8px + env(safe-area-inset-left, 0px)); bottom: calc(110px + env(safe-area-inset-bottom, 0px)); width: min(22em, 60vw); pointer-events: none; }
@@ -185,6 +185,10 @@ input:focus { border-color: var(--hi); }
   #nick { font-size: 16px; }
   #avatar { width: calc(40px * 3); height: calc(44px * 3); }
   canvas#view { touch-action: none; }
+  /* 탭 즉시 반응: 더블탭 확대 대기 제거 + 누르는 순간 눌림 표시 */
+  button, .rn, .item { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .rn:active, .item:active, .drawer button:active, .mbox button:active { filter: brightness(1.25); transform: translateY(1px); }
+  .rn:hover { background: var(--panel2); }
   #prompt { font-size: .8em; }
 }
 /* 360px 이하 극소형 */

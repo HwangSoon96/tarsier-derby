@@ -43,6 +43,7 @@
     // 맵(1024x768)보다 넓게 보이지 않도록 하한을 둔다 → 화면 가장자리에 빈 띠가 생기지 않음.
     const fit = Math.min(view.width / RACE_AREA.w, view.height / RACE_AREA.h), floor = Math.max(view.width / W.W, view.height / W.H);
     gp = race ? Math.max(floor, fit >= 2 ? Math.floor(fit) : Math.floor(fit * 10) / 10)
+      : TOUCH ? Math.max(2, Math.floor(Math.min(view.width, view.height) / 320)) // 폰: 짧은 변에 맵이 320px 이상 보이게 (멀리서 보는 시점, 정수 배율 유지)
       : Math.max(2, Math.round(view.height / 200));
     VW = Math.ceil(view.width / gp) + 1; VH = Math.ceil(view.height / gp) + 1;
     buf.width = VW; buf.height = VH; bx.imageSmoothingEnabled = false; vx.imageSmoothingEnabled = false;
@@ -403,7 +404,7 @@
     if (MOVE_KEYS.includes(e.code) && G.cam.mode === 'race' && !G.cam.target) { G.watch = false; setCam('follow'); }
   });
   addEventListener('keyup', (e) => G.keys.delete(e.code));
-  addEventListener('blur', () => { G.keys.clear(); G.holdUse = false; });
+  addEventListener('blur', () => { G.keys.clear(); G.holdUse = false; G.joy = null; });
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   view.addEventListener('mousedown', (e) => {
     AU.init();
@@ -450,7 +451,8 @@
       else send({ t: 'sell' });
     }
   }
-  const dirOf = (dx, dy) => ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI - 90) / 45) % 8) + 8) % 8;
+  // 화면 방향(dx,dy) → 스프라이트 방향 0↓ 1↘ 2→ 3↗ 4↑ 5↖ 6← 7↙ (아래=0에서 시계 반대 방향으로 45°씩)
+  const dirOf = (dx, dy) => ((Math.round((90 - Math.atan2(dy, dx) * 180 / Math.PI) / 45) % 8) + 8) % 8;
   function emote(e) { if (!e) return; send({ t: 'emote', e }); S.pop(); }
   function sendChat() { const el = $('chat-in'), v = el.value.trim(); if (v) send({ t: 'chat', text: v }); el.value = ''; el.blur(); }
 
@@ -475,15 +477,21 @@
       const k = G.keys;
       if (k.has('KeyA') || k.has('ArrowLeft')) dx--; if (k.has('KeyD') || k.has('ArrowRight')) dx++;
       if (k.has('KeyW') || k.has('ArrowUp')) dy--; if (k.has('KeyS') || k.has('ArrowDown')) dy++;
+      if (!dx && !dy && G.joy) { dx = G.joy.x; dy = G.joy.y; } // 모바일 조이스틱: 360° 아날로그 방향
     }
-    const run = !!(dx || dy) && (G.keys.has('ShiftLeft') || G.keys.has('ShiftRight'));
+    const run = !!(dx || dy) && (G.keys.has('ShiftLeft') || G.keys.has('ShiftRight') || !!(G.joy && G.joy.run));
     if (dx || dy) {
       const n = Math.hypot(dx, dy); dx /= n; dy /= n; // 대각선 속도 정규화
       const ride = p.eq.ride && ITEM[p.eq.ride] ? ITEM[p.eq.ride].speed : 1;
       const v = CFG.WALK * ride * (run ? CFG.RUN_MULT : 1) * (p.act >= 0 ? 0.35 : 1) * dt, ox = p.x, oy = p.y;
       if (jailed) [p.x, p.y] = W.clampJail(p.x + dx * v, p.y + dy * v);
       else { if (!W.blocked(p.x + dx * v, p.y)) p.x += dx * v; if (!W.blocked(p.x, p.y + dy * v)) p.y += dy * v; }
-      if (p.act < 0) p.d = dirOf(dx, dy);
+      // 대각선에서 손을 뗄 때 두 키가 동시에 안 떨어져 마지막 한 프레임에 몸이 옆으로 홱 도는 것 방지:
+      // 대각선이 끝난 지 0.1초 안의 단일 방향은 진행은 하되 방향은 유지
+      // (키보드 전용 — 조이스틱은 아날로그라 해당 없음)
+      const tnow = performance.now(), keyDiag = !G.joy && dx && dy;
+      if (keyDiag) G.diagAt = tnow;
+      if (p.act < 0 && (G.joy || keyDiag || tnow - (G.diagAt || 0) > 100)) p.d = dirOf(dx, dy);
       const moved = Math.hypot(p.x - ox, p.y - oy);
       p.walk += moved / (run ? 26 : 22); p.mv = moved > 0.01; p.run = run; p.speed = moved / dt;
     } else { p.mv = false; p.run = false; p.speed = 0; }
@@ -633,24 +641,17 @@
         if (t.identifier !== joyId) continue;
         const dx = t.clientX - baseX, dy = t.clientY - baseY;
         drawJoy(dx, dy);
-        // 터치 이동량 → 키 시뮬레이션(임계값 12px)
-        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
-        if (Math.hypot(dx, dy) > 12) {
-          // 8방향 매핑: 22.5° 구간마다 키 조합
-          if (dx < -10) G.keys.add('ArrowLeft');
-          if (dx > 10) G.keys.add('ArrowRight');
-          if (dy < -10) G.keys.add('ArrowUp');
-          if (dy > 10) G.keys.add('ArrowDown');
-          if (Math.hypot(dx, dy) > 50) G.keys.add('ShiftLeft');
-        }
+        // 끈 방향 그대로(360°) 이동. 12px 안쪽은 흔들림 무시, 50px 넘게 끌면 달리기
+        const len = Math.hypot(dx, dy);
+        G.joy = len > 12 ? { x: dx / len, y: dy / len, run: len > 50 } : null;
+        if (G.joy && G.cam.mode === 'race' && !G.cam.target) { G.watch = false; setCam('follow'); }
       }
     };
     jz.addEventListener('touchmove', (e) => { e.preventDefault(); joyMove(e); }, { passive: false });
     const joyEnd = (e) => {
       for (const t of e.changedTouches) {
         if (t.identifier !== joyId) continue;
-        joyId = null; jc.classList.remove('on');
-        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
+        joyId = null; jc.classList.remove('on'); G.joy = null;
       }
     };
     jz.addEventListener('touchend', joyEnd); jz.addEventListener('touchcancel', joyEnd);
@@ -991,41 +992,45 @@
     renderRunners(); renderSlip();
   }
   $('bet-tabs').addEventListener('click', (e) => { if (e.target.dataset.type) setBetTab(e.target.dataset.type); });
+  // 주자 목록: 경주·탭이 바뀔 때만 행을 새로 만들고, 그 외(배당·지분 갱신, 선택)는 글자·클래스만 바꾼다.
+  // 매번 다시 만들면 폰에서 초상화 외곽선 계산(GPU 읽기)이 반복돼 탭이 늦게 먹고, 누르는 도중 행이 바뀌어 탭이 사라진다.
+  const copyCanvas = (src) => { const [c, g] = A.mk(src.width, src.height); g.drawImage(src, 0, 0); return c; };
   function renderRunners() {
-    const el = $('runners'); el.replaceChildren();
-    const r = G.race; if (!r || !r.runners) return;
+    const el = $('runners'), r = G.race;
+    if (!r || !r.runners) { el.replaceChildren(); el._key = null; return; }
     const closed = r.phase !== 'betting';
     $('bet-title').textContent = `경주 #${r.id % 1000} 베팅`; $('bet-count').textContent = ` · 마감 ${mmss(r.betEnd - now())}`;
     $('slip-closed').classList.toggle('hidden', !closed);
+    const key = r.id + '|' + G.betType;
+    if (el._key !== key) {
+      el._key = key; el._rows = [];
+      el.replaceChildren(...r.runners.map((q, i) => {
+        const cond = COND.find((c) => c.k === q.cond) || COND[2];
+        const statBar = (val, col) => h('i', null, h('b', { style: `width:${val}%;background:${col}` }));
+        const odds = h('div', { class: 'odds' }), share = h('div', { class: 'share' }), badge = h('span', { class: 'badge hidden' });
+        const row = h('div', { class: 'rn', onclick: () => pickRunner(i) },
+          badge,
+          h('div', { class: 'num', style: `background:${q.color}` }, String(q.num)),
+          copyCanvas(portrait(q.color, q.num, false)),
+          h('div', null,
+            h('div', { class: 'nm' }, q.name),
+            h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · 컨디션 ${cond.ko}`),
+            h('div', { class: 'stats' }, statBar(q.spd, '#ff6a5a'), statBar(q.sta, '#3b78d8'), statBar(q.gut, '#e8b830'), statBar(q.luck, '#4caf50'))),
+          h('div', null, odds, share));
+        el._rows.push({ row, odds, share, badge });
+        return row;
+      }));
+    }
     const totalPool = Math.max(1, r.pool.reduce((a, b) => a + b, 0));
-    r.runners.forEach((q, i) => {
-      const cond = COND.find((c) => c.k === q.cond) || COND[2];
-      const sel = G.pick.includes(i), pickN = G.pick.indexOf(i);
-      const oVal = r.odds ? (G.betType === 'exacta' ? null : r.odds[G.betType][i]) : null;
-      // 초상화 캠버스
-      const [pc, pg] = A.mk(28, 30); A.tarsierFront(pg, 14, 28, q.color, q.num, false);
-      const pcOut = A.outline(pc);
-      // 능력치 바
-      const statBar = (label, val, col) => {
-        const bar = h('i'); const inner = h('b', { style: `width:${val}%;background:${col}` }); bar.appendChild(inner);
-        return bar;
-      };
-      const statsEl = h('div', { class: 'stats' }, statBar('SPD', q.spd, '#ff6a5a'), statBar('STA', q.sta, '#3b78d8'), statBar('GUT', q.gut, '#e8b830'), statBar('LCK', q.luck, '#4caf50'));
-      const row = h('div', { class: 'rn' + (sel ? ' sel' : ''), onclick: () => pickRunner(i) },
-        h('div', { class: 'num', style: `background:${q.color}` }, String(q.num)),
-        pcOut,
-        h('div', null,
-          h('div', { class: 'nm' }, q.name),
-          h('div', { class: 'meta' + (cond.k === 'best' || cond.k === 'good' ? ' cond-good' : cond.k === 'bad' || cond.k === 'worst' ? ' cond-bad' : '') }, `${STYLE_KO[q.style]} · 컨디션 ${cond.ko}`),
-          statsEl
-        ),
-        h('div', null,
-          h('div', { class: 'odds' }, oVal != null ? oVal.toFixed(2) : (G.betType === 'exacta' && sel ? `${pickN + 1}착` : '–')),
-          h('div', { class: 'share' }, `${(r.pool[i] / totalPool * 100).toFixed(0)}%`)
-        )
-      );
-      if (sel && G.betType === 'exacta') row.insertBefore(h('span', { class: 'badge' }, `${pickN + 1}착`), row.firstChild);
-      el.appendChild(row);
+    el._rows.forEach(({ row, odds, share, badge }, i) => {
+      const sel = G.pick.includes(i), pickN = G.pick.indexOf(i), ex = G.betType === 'exacta';
+      const oVal = r.odds && !ex ? r.odds[G.betType][i] : null;
+      row.classList.toggle('sel', sel);
+      const ot = oVal != null ? oVal.toFixed(2) : ex && sel ? `${pickN + 1}착` : '–';
+      if (odds.textContent !== ot) odds.textContent = ot;
+      const st = `${(r.pool[i] / totalPool * 100).toFixed(0)}%`;
+      if (share.textContent !== st) share.textContent = st;
+      badge.classList.toggle('hidden', !(sel && ex)); badge.textContent = sel && ex ? `${pickN + 1}착` : '';
     });
   }
   function pickRunner(i) {
@@ -1037,7 +1042,7 @@
   }
   function renderSlip() {
     const r = G.race, closed = !r || r.phase !== 'betting', sp = $('slip-pick');
-    if (closed) { $('place').disabled = true; return; }
+    if (closed) { $('place').disabled = true; sp.textContent = ''; $('payout').textContent = ''; return; }
     const ready = G.betType === 'exacta' ? G.pick.length === 2 : G.pick.length === 1;
     if (!ready) {
       sp.textContent = G.betType === 'exacta' ? `1착과 2착을 순서대로 골라 주세요 (${G.pick.length}/2)` : (TOUCH ? '응원할 안경원숭이를 골라 주세요' : '응원할 안경원숭이를 골라 주세요 (숫자 키 1~6)');
@@ -1289,6 +1294,6 @@
 
   // 테스트 훅
   // 자동화 테스트용 조회 훅 (읽기 전용 요약)
-  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast,
+  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast, personSprite, view: () => ({ VW, VH, gp }),
     state: () => { const p = G.players.get(G.id); return p && G.me ? { x: p.x, y: p.y, jail: G.me.jail > now(), rice: G.me.rice || 0, coins: G.me.coins, riceList: G.rice.map((r) => ({ x: r.x, y: r.y, ready: r.at <= now() })) } : null; } };
 })();

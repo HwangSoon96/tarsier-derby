@@ -93,7 +93,12 @@ test('베팅: 서랍 열기 → 주자 선택 → 금액 → 베팅 → 코인 �
   const c0 = (await state(p)).coins;
   await p.keyboard.press('KeyB');
   await p.waitForSelector('#bet:not(.hidden) .rn');
+  // 배당 갱신·선택 때 행을 새로 만들지 않음 (누르는 도중 행이 바뀌면 탭이 사라짐)
+  const row0 = await p.evaluateHandle(() => document.querySelector('#runners .rn'));
+  await p.click('#runners .rn >> nth=1');
+  await p.evaluate(() => { const T = window.__TD; T.G.race.pool = T.G.race.pool.map((v) => v + 100); });
   await p.click('#runners .rn >> nth=2');
+  assert.ok(await p.evaluate((r) => r.isConnected && document.querySelectorAll('#runners .rn')[2].classList.contains('sel'), row0), '주자 행이 다시 만들어짐');
   await p.fill('#amt', '150');
   await shot(p, '04-bet');
   await p.click('#place');
@@ -146,6 +151,13 @@ test('이동: 키보드로 걸으면 서버 위치도 따라오고, 화면은 �
   assert.ok(log.length > 30, `측정 프레임 부족 ${log.length}`);
   const spread = Math.max(...log.map((l) => l[0])) - Math.min(...log.map((l) => l[0]));
   assert.ok(spread < 0.01, `걷는 동안 캐릭터가 화면에서 흔들림: ${spread}`);
+  // 몸이 걷는 방향을 봄 (0↓ 1↘ 2→ 3↗ 4↑ 5↖ 6← 7↙)
+  const myDir = () => p.evaluate(() => window.__TD.G.players.get(window.__TD.G.id).d);
+  assert.equal(await myDir(), 2, '오른쪽으로 걸었는데 몸이 오른쪽을 안 봄');
+  for (const [keys, want] of [[['KeyA'], 6], [['KeyS', 'KeyD'], 1], [['KeyW', 'KeyD'], 3], [['KeyW', 'KeyA'], 5], [['KeyS', 'KeyA'], 7], [['KeyW'], 4], [['KeyS'], 0]]) {
+    for (const k of keys) await p.keyboard.down(k); await sleep(200); for (const k of keys) await p.keyboard.up(k);
+    assert.equal(await myDir(), want, keys.join('+'));
+  }
   await p.context().close();
 });
 
@@ -232,9 +244,21 @@ for (const [name, dev] of [['iPhone 13', devices['iPhone 13']], ['Galaxy S9+', d
     await touch('touchEnd');
     const s1 = await state(p);
     assert.ok(s1.x - s0.x > 30, `조이스틱으로 안 움직임 ${s0.x}→${s1.x}`);
+    assert.equal(await p.evaluate(() => window.__TD.G.players.get(window.__TD.G.id).d), 2, '오른쪽으로 밀었는데 몸이 오른쪽을 안 봄');
     await sleep(300);
     const s2 = await state(p);
     assert.ok(Math.abs(s2.x - s1.x) < 2, '손을 뗐는데 계속 움직임');
+    // 대각선(왼쪽 위 30°): 키 4방향이 아니라 끈 각도대로 이동
+    await touch('touchStart', cx, cy);
+    for (let i = 1; i <= 8; i++) { await touch('touchMove', cx - i * 6 * Math.cos(Math.PI / 6), cy - i * 6 * Math.sin(Math.PI / 6)); await sleep(30); }
+    await sleep(800);
+    await touch('touchEnd');
+    const s3 = await state(p), ang = Math.atan2(-(s3.y - s2.y), -(s3.x - s2.x)) * 180 / Math.PI;
+    assert.ok(Math.abs(ang - 30) < 8, `조이스틱 각도대로 안 감: ${ang.toFixed(1)}° (기대 30°)`);
+    assert.equal(await p.evaluate(() => window.__TD.G.players.get(window.__TD.G.id).d), 5, '왼쪽 위로 밀었는데 왼쪽 위 포즈가 아님');
+    // 멀리서 보는 시점: 짧은 변에 맵이 200px 이상 보임
+    const shortWorld = await p.evaluate(() => Math.min(window.__TD.view().VW, window.__TD.view().VH));
+    assert.ok(shortWorld >= 300, `너무 가까운 시점: 짧은 변 ${shortWorld}px`);
     // 메뉴 바의 '베팅' → 바텀시트, 화면 안에 들어옴
     await p.tap('#bar [data-act="bet"]');
     await p.waitForSelector('#bet:not(.hidden)');

@@ -76,17 +76,24 @@
     // --- 몸통 ---
     if (pose === 'side') {
       Q(-3, -12, 6, 6, shirt); Q(-3, -12, 2, 6, shirtD); Q(-3, -7, 6, 1, pantsD);
+    } else if (pose === 'fq' || pose === 'bq') {
+      // 3/4: 몸을 비튼 만큼 폭이 좁고, 보는 쪽으로 1px 치우침. 먼 쪽은 그늘.
+      Q(-4, -12, 9, 6, shirt); Q(-4, -7, 9, 1, pantsD); Q(-4, -12, 2, 5, shirtD);
+      if (pose === 'fq') Q(1, -12, 2, 2, shirtD); else Q(-4, -12, 9, 1, shirtD);
     } else {
       Q(-5, -12, 10, 6, shirt); Q(-5, -7, 10, 1, pantsD);
-      if (pose === 'front' || pose === 'fq') { Q(-1, -12, 2, 2, shirtD); Q(-5, -12, 1, 5, shirtD); }
+      if (pose === 'front') { Q(-1, -12, 2, 2, shirtD); Q(-5, -12, 1, 5, shirtD); }
       else Q(-5, -12, 10, 1, shirtD);
-      if (pose === 'fq' || pose === 'bq') Q(-5, -12, 2, 5, shirtD);
     }
     // --- 팔 (도구 사용 중이면 팔은 도구 쪽에서 그림) ---
     const swing = seated ? 0 : ls;
     if (!opts.act) {
       if (pose === 'side') { Q(-1 - swing, -11, 2, 5, shirtD); Q(-1 - swing * 2, -7, 2, 2, skin); }
-      else {
+      else if (pose === 'fq' || pose === 'bq') {
+        // 먼 팔은 몸 뒤로 거의 가려지고, 가까운 팔은 앞뒤로 흔들림
+        Q(-5, -11 - (swing > 0 ? 1 : 0), 1, 4, shade(shirt, 0.62));
+        Q(5, -11 + swing, 2, 4, shirtD); Q(5, -7 + swing, 2, 2, skin);
+      } else {
         Q(-7, -11 - (swing > 0 ? 1 : 0), 2, 4, shirtD); Q(5, -11 - (swing < 0 ? 1 : 0), 2, 4, shirtD);
         Q(-7, -7 - (swing > 0 ? 1 : 0), 2, 2, skin); Q(5, -7 - (swing < 0 ? 1 : 0), 2, 2, skin);
       }
@@ -99,8 +106,10 @@
       Q(-4, hy + 6, 2, 2, '#2a1d16'); Q(2, hy + 6, 2, 2, '#2a1d16'); Q(-4, hy + 6, 1, 1, '#fff'); Q(2, hy + 6, 1, 1, '#fff');
       Q(-5, hy + 8, 2, 1, '#f09a8a'); Q(3, hy + 8, 2, 1, '#f09a8a'); Q(-1, hy + 9, 2, 1, shade(skin, 0.7));
     } else if (pose === 'fq') {
-      Q(-2, hy + 6, 2, 2, '#2a1d16'); Q(3, hy + 6, 2, 2, '#2a1d16'); Q(-2, hy + 6, 1, 1, '#fff'); Q(3, hy + 6, 1, 1, '#fff');
-      Q(4, hy + 8, 2, 1, '#f09a8a'); Q(1, hy + 9, 2, 1, shade(skin, 0.7)); Q(-6, hy + 5, 1, 3, skinD);
+      // 얼굴이 보는 쪽으로 돌아감: 눈·입이 오른쪽으로, 코끝이 윤곽 밖으로, 먼 쪽에 귀
+      Q(-1, hy + 6, 2, 2, '#2a1d16'); Q(3, hy + 6, 2, 2, '#2a1d16'); Q(-1, hy + 6, 1, 1, '#fff'); Q(3, hy + 6, 1, 1, '#fff');
+      Q(4, hy + 8, 2, 1, '#f09a8a'); Q(1, hy + 9, 2, 1, shade(skin, 0.7)); Q(6, hy + 7, 1, 2, skin);
+      Q(-5, hy + 5, 2, 3, skinD);
     } else if (pose === 'side') {
       Q(2, hy + 6, 2, 2, '#2a1d16'); Q(2, hy + 6, 1, 1, '#fff'); Q(6, hy + 7, 1, 2, skin); Q(3, hy + 8, 2, 1, '#f09a8a');
       Q(-2, hy + 5, 2, 3, skinD);                                                      // 귀
@@ -111,6 +120,7 @@
       const k = pose === 'fq' ? 1 : 0;
       Q(-6, hy - 1, 12, 4, hair); Q(-5, hy - 2, 10, 1, hair); Q(-6, hy + 3, 3 - k, 2, hair); Q(3 + k, hy + 3, 3 - k, 2, hair);
       Q(-4 + k, hy - 1, 5, 1, hairL); Q(-2 + k, hy + 3, 3, 1, hairD);
+      if (k) Q(-6, hy + 3, 2, 3, hair); // 먼 쪽 옆머리
       if (st === 'spiky') { Q(-5, hy - 4, 2, 2, hair); Q(-1, hy - 5, 2, 3, hair); Q(3, hy - 4, 2, 2, hair); }
       if (st === 'side') { Q(-6, hy + 3, 6, 2, hair); }
       if (st === 'buzz') { Q(-6, hy + 3, 12, 2, skin); Q(-6, hy + 1, 12, 2, hair); Q(-6, hy + 3, 1, 1, hair); Q(5, hy + 3, 1, 1, hair); }
@@ -131,12 +141,13 @@
       // 뒤·뒤 3/4: 머리 대부분이 머리카락
       const k = pose === 'bq' ? 1 : 0;
       Q(-6, hy - 1, 12, 11 - (st === 'buzz' ? 3 : 0), hair); Q(-5, hy - 2, 10, 1, hair); Q(-4, hy, 6, 1, hairL); Q(-6, hy + 9, 12, 1, hairD);
-      if (k) { Q(5, hy + 4, 1, 4, skin); Q(4, hy + 9, 2, 2, skinD); }
       if (st === 'spiky') { Q(-5, hy - 4, 2, 2, hair); Q(-1, hy - 5, 2, 3, hair); Q(3, hy - 4, 2, 2, hair); }
       if (st === 'long') { Q(-7, hy + 1, 14, 13, hair); Q(-7, hy + 13, 14, 1, hairD); Q(-1, hy + 3, 1, 10, hairD); }
       if (st === 'bob') { Q(-7, hy + 1, 14, 10, hair); Q(-7, hy + 10, 14, 1, hairD); }
       if (st === 'pony') { Q(-2, hy + 5, 4, 3, hairD); Q(-1, hy + 8, 3, 6, hair); Q(-1, hy + 13, 2, 1, hairD); }
       if (st === 'buns') { Q(-8, hy - 2, 4, 4, hair); Q(4, hy - 2, 4, 4, hair); }
+      // 뒤 3/4: 머리 모양과 상관없이 보는 쪽 볼·귀 윤곽이 드러남 (머리카락 위에 그림), 먼 쪽은 머리카락 그늘
+      if (k) { Q(-6, hy + 1, 2, 8, hairD); Q(4, hy + 3, 2, 7, skin); Q(6, hy + 5, 1, 4, skin); Q(4, hy + 4, 1, 3, skinD); Q(5, hy + 8, 1, 1, '#f09a8a'); Q(4, hy + 10, 2, 1, skinD); }
     }
     return { headTop: by + hy - 2 };
   }

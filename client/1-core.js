@@ -43,6 +43,7 @@
     // 맵(1024x768)보다 넓게 보이지 않도록 하한을 둔다 → 화면 가장자리에 빈 띠가 생기지 않음.
     const fit = Math.min(view.width / RACE_AREA.w, view.height / RACE_AREA.h), floor = Math.max(view.width / W.W, view.height / W.H);
     gp = race ? Math.max(floor, fit >= 2 ? Math.floor(fit) : Math.floor(fit * 10) / 10)
+      : TOUCH ? Math.max(2, Math.floor(Math.min(view.width, view.height) / 320)) // 폰: 짧은 변에 맵이 320px 이상 보이게 (멀리서 보는 시점, 정수 배율 유지)
       : Math.max(2, Math.round(view.height / 200));
     VW = Math.ceil(view.width / gp) + 1; VH = Math.ceil(view.height / gp) + 1;
     buf.width = VW; buf.height = VH; bx.imageSmoothingEnabled = false; vx.imageSmoothingEnabled = false;
