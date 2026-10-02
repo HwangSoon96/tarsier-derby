@@ -37,8 +37,8 @@
     stand: R(300, 404, 360, 34),       // 레일 앞 관람 구역 (걸어 다닐 수 있음)
     bookie: R(232, 420, 80, 50),
     shop: R(96, 300, 96, 80),
-    cage: R(800, 400, 112, 88),
-    cageIn: R(812, 416, 88, 64),       // 수감자가 움직일 수 있는 안쪽
+    jail: R(784, 392, 160, 112),      // 파산자 감옥 (쇠창살 바깥 테두리, 안쪽 바닥은 벼밭)
+    jailIn: R(792, 404, 144, 92),     // 갇힌 사람이 움직일 수 있는 안쪽
     mineW: R(48, 80, 150, 180),
     mineE: R(780, 96, 190, 220),
     north: R(300, 16, 360, 150)
@@ -46,13 +46,13 @@
   const NPCS = [
     { id: 'bookie', name: '베팅 로봇 BET-9', x: 272, y: 450, act: 'bet' },
     { id: 'shop', name: '화성 잡화상 쿠쿠', x: 144, y: 372, act: 'shop' },
-    { id: 'guard', name: '보안관 R-2', x: 790, y: 470, act: 'talk' }
+    { id: 'farmer', name: '간수 로봇 벼리', x: 812, y: 492, act: 'rice' }
   ];
   // 이동 불가 직사각형 (건물·우리 벽·장식물)
   const SOLIDS = [
     R(100, 302, 88, 60),            // 상점 돔
     R(232, 440, 80, 30),            // 베팅 부스 (로봇 + 카운터)
-    R(800, 400, 112, 10), R(800, 478, 112, 10), R(800, 400, 10, 88), R(902, 400, 10, 88), // 우리 벽
+    R(784, 392, 160, 10), R(784, 496, 160, 10), R(784, 392, 8, 114), R(936, 392, 8, 114), // 감옥 쇠창살
     R(318, 40, 84, 50), R(430, 30, 100, 64), R(560, 44, 84, 46),                         // 북쪽 거주 돔
     R(700, 30, 26, 64),             // 로켓
     R(330, 444, 130, 30), R(500, 444, 130, 30) // 관중석 좌·우 (가운데는 통로)
@@ -61,6 +61,10 @@
     [70, 110], [120, 96], [170, 130], [86, 170], [150, 200], [64, 236], [182, 248],
     [800, 120], [860, 108], [930, 140], [820, 190], [900, 210], [950, 260], [840, 280], [910, 300]
   ].map(([x, y], i) => ({ id: i, x, y }));
+
+  // 감옥 안 벼밭의 벼 (4x3). 베면 그루터기만 남고 RICE_REGROW_MS 뒤 다시 익는다.
+  const RICE = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) RICE.push({ id: RICE.length, x: 852 + c * 22, y: 424 + r * 24 });
 
   const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
   // 발 위치(x,y) 기준 이동 가능 여부. 히트박스 폭 8, 높이 4.
@@ -72,7 +76,7 @@
     for (const k of ROCKS) if (Math.abs(x - k.x) < 8 && y > k.y - 4 && y - hh < k.y + 2) return true;
     return false;
   }
-  const clampCage = (x, y) => { const c = ZONES.cageIn; return [Math.min(Math.max(x, c.x + 4), c.x + c.w - 4), Math.min(Math.max(y, c.y + 4), c.y + c.h)]; };
+  const clampJail = (x, y) => { const c = ZONES.jailIn; return [Math.min(Math.max(x, c.x + 4), c.x + c.w - 4), Math.min(Math.max(y, c.y + 4), c.y + c.h)]; };
 
   // ---------- 아이템 ----------
   const ITEMS = [
@@ -122,7 +126,9 @@
   // ---------- 경제·주기 ----------
   const CFG = {
     START_COINS: 1000, MIN_BET: 10, MAX_BETS_PER_RACE: 20, HOUSE_EDGE: 0.1,
-    BANKRUPT_JAIL_MS: 30000, BAILOUT: 300,
+    // 파산 감옥: 안쪽 벼밭에서 벼를 베어 쌀을 RICE_NEED개 모아 농부에게 팔면 석방, 벨 때마다 ESCAPE_CHANCE 확률로 즉시 탈출.
+    // 아무것도 안 해도 BANKRUPT_JAIL_MS 뒤엔 풀려남. 석방되면 재기 지원금 BAILOUT.
+    BANKRUPT_JAIL_MS: 45000, BAILOUT: 300, RICE_NEED: 5, ESCAPE_CHANCE: 0.05, RICE_REGROW_MS: 5000, RICE_COOLDOWN_MS: 450,
     CYCLE_MS: 300000, RACE_MS: 60000, RESULT_MS: 15000, CLOSE_MS: 15000,
     RUNNERS: 6, TICK_HZ: 20,
     WALK: 72, RUN_MULT: 1.65, MAX_SPEED_MULT: 1.65 * 1.3,
@@ -154,6 +160,6 @@
     return { gender, skin: pick(LOOK.skin), hair: pick(LOOK.hair), shirt: pick(LOOK.shirt), pants: pick(LOOK.pants), style: pick(gender === 'f' ? LOOK.fStyle : LOOK.mStyle) };
   }
 
-  const API = { T, MW, MH, W, H, TRACK, ZONES, NPCS, SOLIDS, ROCKS, ITEMS, ITEM, SLOTS, EMOTES, STABLE, STYLE_KO, COND, CFG, NAME_RE, LOOK, stadiumDist, lanePos, blocked, clampCage, inRect, phases, look };
+  const API = { T, MW, MH, W, H, TRACK, ZONES, NPCS, SOLIDS, ROCKS, RICE, ITEMS, ITEM, SLOTS, EMOTES, STABLE, STYLE_KO, COND, CFG, NAME_RE, LOOK, stadiumDist, lanePos, blocked, clampJail, inRect, phases, look };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WORLD = API;
 })(this);

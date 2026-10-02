@@ -7,7 +7,8 @@
   const TOAST_LIFE = 4500;
   function toast(text, kind) {
     const el = h('div', { class: 'toast' + (kind ? ' ' + kind : '') }, text);
-    $('toasts').appendChild(el); el.offsetHeight;
+    const box = $('toasts'); box.appendChild(el); el.offsetHeight;
+    while (box.children.length > 3) box.firstChild.remove(); // 한 번에 최대 3개만
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 420); }, TOAST_LIFE);
   }
   function ticker(text) {
@@ -34,7 +35,7 @@
     const showCoins = Math.round(G.coinShow + (G.me.coins - G.coinShow) * 0.18);
     G.coinShow = showCoins; $('coins').textContent = fmt(showCoins);
     const jailed = G.me.jail > now();
-    $('jail-t').textContent = jailed ? ` · 수감 ${Math.ceil((G.me.jail - now()) / 1000)}초` : '';
+    $('jail-t').textContent = jailed ? ` · 감옥 쌀 ${G.me.rice || 0}/${CFG.RICE_NEED} · ${Math.ceil((G.me.jail - now()) / 1000)}초` : '';
     $('me-box').classList.toggle('jailed', jailed);
     renderRaceBox();
   }
@@ -75,14 +76,21 @@
   };
 
   // ---------- 베팅 ----------
-  const betOpen = () => !$('bet').classList.contains('hidden');
+  const betOpen = () => !$('bet').classList.contains('hidden') && !$('bet').classList.contains('closing');
   function openBet() {
     if (!G.race || G.race.phase === 'void') return toast('지금은 베팅할 수 없어요. 다음 경주를 기다려 주세요.');
-    if (G.me && G.me.jail > now()) return toast('감옥에서는 베팅할 수 없어요.');
-    $('bet').classList.remove('hidden'); G.betType = 'win'; G.pick = [];
+    if (G.me && G.me.jail > now()) return toast('감옥에 갇혀 있는 동안에는 베팅할 수 없어요.');
+    showEl($('bet')); G.betType = 'win'; G.pick = [];
     setBetTab('win'); renderRunners(); renderSlip(); S.ui();
   }
-  function closeBet() { $('bet').classList.add('hidden'); S.ui(); }
+  // 닫힘 애니메이션이 끝난 뒤 숨김. 그 사이 다시 열면 취소.
+  function hideAnimated(el) {
+    if (el.classList.contains('hidden') || el.classList.contains('closing')) return;
+    el.classList.add('closing');
+    el._hideT = setTimeout(() => { el.classList.remove('closing'); el.classList.add('hidden'); }, 160);
+  }
+  function showEl(el) { clearTimeout(el._hideT); el.classList.remove('closing', 'hidden'); }
+  function closeBet() { hideAnimated($('bet')); S.ui(); }
   function setBetTab(type) {
     G.betType = type; G.pick = [];
     for (const b of $('bet-tabs').children) b.classList.toggle('on', b.dataset.type === type);
@@ -173,7 +181,7 @@
   // ---------- 상점 ----------
   const shopOpen = () => !$('modal').classList.contains('hidden') && $('modal')._mode === 'shop';
   function openShop() {
-    $('modal')._mode = 'shop'; renderShop(); $('modal').classList.remove('hidden'); S.ui();
+    $('modal')._mode = 'shop'; renderShop(); showEl($('modal')); S.ui();
   }
   function renderShop() {
     const body = $('modal-body'), p = G.me; if (!p) return; body.replaceChildren();
@@ -209,7 +217,7 @@
   }
 
   // ---------- 모달 (순위·도움말·결과) ----------
-  function closeModal() { $('modal').classList.add('hidden'); S.ui(); }
+  function closeModal() { hideAnimated($('modal')); S.ui(); }
   for (const b of document.querySelectorAll('[data-close]')) b.addEventListener('click', () => { const t = b.dataset.close; if (t === 'bet') closeBet(); else closeModal(); });
   function openBoard() {
     $('modal')._mode = 'board'; const body = $('modal-body'); body.replaceChildren();
@@ -220,11 +228,11 @@
         h('span', null, p.name), h('span', null, `${fmt(p.coins)} 코인`), p.best ? h('small', null, `최고 당첨 ${fmt(p.best)}`) : null
       ));
     }
-    body.appendChild(ol); $('modal').classList.remove('hidden'); S.ui();
+    body.appendChild(ol); showEl($('modal')); S.ui();
   }
   function openHelp() {
     $('modal')._mode = 'help'; const body = $('modal-body'); body.replaceChildren();
-    body.appendChild(h('h2', null, '안경원숭이 더비 · 도움말'));
+    body.appendChild(h('h2', null, '화성간건호 · 도움말'));
     const sec = (t) => body.appendChild(h('h3', null, t));
     sec('베팅');
     body.appendChild(h('p', null, '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 E 키를 누르거나 B 키로 베팅 창을 열 수 있어요.'));
@@ -234,10 +242,12 @@
     sec('상점');
     body.appendChild(h('p', null, '잡화상 쿠쿠에게 가거나 I 키를 눌러 모자, 발자취, 탈것, 펫을 살 수 있어요.'));
     sec('파산');
-    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 30초 동안 감옥에 갇혀요. 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
+    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 감옥에 갇혀 안경원숭이로 변해요.`));
+    body.appendChild(h('p', null, `익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 모아 농부 로봇 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출할 수도 있어요.`));
+    body.appendChild(h('p', null, `아무것도 안 해도 ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 뒤엔 풀려나요. 나올 때 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
     sec('단축키');
     body.appendChild(h('p', null, 'WASD/방향키: 이동 · Shift: 달리기 · E/스페이스: 상호작용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
-    $('modal').classList.remove('hidden'); S.ui();
+    showEl($('modal')); S.ui();
   }
   function openResult(m) {
     $('modal')._mode = 'result'; const body = $('modal-body'); body.replaceChildren();
@@ -258,7 +268,7 @@
       const net = m.mine.pay - m.mine.stake;
       body.appendChild(h('div', { class: 'net' + (net >= 0 ? ' plus' : ' minus') }, `순이익: ${net >= 0 ? '+' : ''}${fmt(net)} 코인`));
     }
-    $('modal').classList.remove('hidden');
+    showEl($('modal'));
   }
 
   // ---------- 바 버튼 ----------
@@ -274,7 +284,7 @@
     }
   });
   function toggleMute() { AU.setMuted(!AU.muted); $('mute-btn').classList.toggle('off', AU.muted); S.ui(); }
-  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '경주 자동 중계를 켰어요.' : '경주 자동 중계를 껏어요.'); }
+  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '경주 자동 중계를 켰어요.' : '경주 자동 중계를 껐어요.'); }
 
   // 이모트 바
   const emoteBar = $('emotes');
@@ -298,6 +308,16 @@
     b.addEventListener('click', () => { T.g = b.dataset.g; for (const x of $('gender').querySelectorAll('button[data-g]')) x.classList.toggle('on', x.dataset.g === T.g); drawAvatar(); });
   }
   $('reroll').addEventListener('click', () => { T.seed = crypto.getRandomValues(new Uint32Array(1))[0]; drawAvatar(); S.hover(); });
+  // 로고: 글꼴이 로드된 뒤 한 번 그리고, 화면 크기에 맞는 정수 배율로만 키운다 (픽셀 뭉개짐 방지)
+  let LOGO = null;
+  function sizeLogo() {
+    if (!LOGO) return;
+    const el = $('logo'), k = Math.max(2, Math.min(6, Math.floor(Math.min(innerWidth * 0.62 / LOGO.width, innerHeight * 0.3 / LOGO.height))));
+    el.width = LOGO.width; el.height = LOGO.height; el.getContext('2d').drawImage(LOGO, 0, 0);
+    el.style.width = LOGO.width * k + 'px'; el.style.height = LOGO.height * k + 'px';
+  }
+  document.fonts.load('bold 12px Galmuri11').then(() => { LOGO = A.logo(); sizeLogo(); });
+  addEventListener('resize', sizeLogo);
   const avCtx = $('avatar').getContext('2d');
   let avDir = 0;
   function drawAvatar() {
@@ -334,7 +354,7 @@
     $('title').classList.add('hidden'); $('hud').classList.remove('hidden');
     setCam('follow'); resize(); bake();
     $('coins').textContent = fmt(G.me.coins);
-    if (G.me.jail > now()) toast(`아직 감옥이에요. ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요. 채팅은 할 수 있어요.`, 'bad');
+    if (G.me.jail > now()) toast(`아직 감옥이에요. 쌀 ${G.me.rice || 0}/${CFG.RICE_NEED} · ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요.`, 'bad');
     S.ui();
     AU.setCrowd(0.15);
   }
@@ -351,13 +371,8 @@
       AU.setCrowd(ph === 'race' ? 0.55 : ph === 'result' ? 0.7 : 0.12);
       render();
     } else if (G.mode === 'title') {
-      checkPractice();
-      updateCam(dt);
-      bx.fillStyle = '#2a100a'; bx.fillRect(0, 0, VW, VH);
-      bx.drawImage(ground, -G.cam.x, -G.cam.y);
-      const rv = runnersView();
-      if (rv) for (const q of rv.list) drawRunner(q, G.cam.x, G.cam.y, rv, ts / 1000);
-      vx.drawImage(buf, 0, 0, VW * gp, VH * gp);
+      checkPractice(); updateParts(dt); updateCam(dt);
+      render(); // 타이틀 배경도 관중석·전광판·결승선까지 실제 경기장 그대로
     }
     // 카운트다운 비프
     if (G.mode === 'play' && G.race && G.race.phase === 'closed') {
@@ -373,5 +388,7 @@
   requestAnimationFrame(frame);
 
   // 테스트 훅
-  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast };
+  // 자동화 테스트용 조회 훅 (읽기 전용 요약)
+  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast,
+    state: () => { const p = G.players.get(G.id); return p && G.me ? { x: p.x, y: p.y, jail: G.me.jail > now(), rice: G.me.rice || 0, coins: G.me.coins, riceList: G.rice.map((r) => ({ x: r.x, y: r.y, ready: r.at <= now() })) } : null; } };
 })();

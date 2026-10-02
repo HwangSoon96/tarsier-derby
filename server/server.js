@@ -1,13 +1,14 @@
-// 안경원숭이 더비: 권위 서버 (HTTP 정적 + WebSocket). 돈·베팅·경주·감옥 판정은 모두 서버가 한다.
+// 화성간건호: 권위 서버 (HTTP 정적 + WebSocket). 돈·베팅·경주·파산·감옥 판정은 모두 서버가 한다.
 'use strict';
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Worker } = require('worker_threads');
 const { WebSocketServer } = require('ws');
 const W = require('../shared/world.js');
 const RACE = require('../shared/race.js');
-const { CFG, ITEM, SLOTS, EMOTES, STABLE, ROCKS } = W;
+const { CFG, ITEM, SLOTS, EMOTES, STABLE, ROCKS, RICE, NPCS } = W;
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.md': 'text/plain; charset=utf-8' };
 const SECURITY_HEADERS = {
@@ -34,7 +35,8 @@ function createServer(opts = {}) {
     dataFile: opts.dataFile ?? process.env.DATA_FILE ?? path.join(__dirname, '..', 'data', 'players.json'),
     cycleMs: opts.cycleMs ?? (+process.env.CYCLE_MS || CFG.CYCLE_MS),
     jailMs: opts.jailMs ?? (+process.env.JAIL_MS || CFG.BANKRUPT_JAIL_MS),
-    maxPerIp: opts.maxPerIp ?? (+process.env.MAX_PER_IP || 8), maxConn: opts.maxConn ?? (+process.env.MAX_CONN || 300),
+    // 한 강의실·회사처럼 공인 IP 하나를 여러 명이 쓰는 경우를 고려해 IP당 제한은 넉넉하게
+    maxPerIp: opts.maxPerIp ?? (+process.env.MAX_PER_IP || 60), maxConn: opts.maxConn ?? (+process.env.MAX_CONN || 300),
     trustProxy: opts.trustProxy ?? process.env.TRUST_PROXY === '1',
     origins: (opts.origins ?? process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     oddsSims: opts.oddsSims ?? 1200, log: opts.log ?? true
@@ -68,7 +70,7 @@ function createServer(opts = {}) {
   const send = (s, m) => { if (s.ws.readyState === 1) s.ws.send(typeof m === 'string' ? m : JSON.stringify(m)); };
   const broadcast = (m, except) => { const j = JSON.stringify(m); for (const s of sessions.values()) if (s.p && s !== except) send(s, j); };
   const pub = (s) => ({ id: s.id, name: s.p.name, g: s.p.gender, seed: s.p.seed, eq: s.p.eq, x: s.x, y: s.y, d: s.dir, jail: s.p.jail > Date.now() ? s.p.jail : 0 });
-  const me = (p) => ({ name: p.name, gender: p.gender, seed: p.seed, coins: p.coins, owned: p.owned, eq: p.eq, stats: p.stats, jail: p.jail > Date.now() ? p.jail : 0 });
+  const me = (p) => ({ name: p.name, gender: p.gender, seed: p.seed, coins: p.coins, owned: p.owned, eq: p.eq, stats: p.stats, jail: p.jail > Date.now() ? p.jail : 0, rice: p.jail > Date.now() ? p.rice || 0 : 0 });
 
   // ---------- 경주 ----------
   const cycleOf = (t) => ({ id: Math.floor(t / o.cycleMs), at: t % o.cycleMs, start: t - (t % o.cycleMs) });
@@ -78,7 +80,18 @@ function createServer(opts = {}) {
     const card = RACE.drawCard(seed);
     return { id, startAt, card, odds: null, oddsSeed: crypto.randomInt(2 ** 31), bets: [], pool: new Array(card.length).fill(0), phase: 'betting', result: null, settled: false, poolDirty: false };
   }
-  function computeOdds(r) { r.odds = RACE.odds(r.card, r.oddsSeed, o.oddsSims); }
+  // 배당은 워커 스레드에서 계산 → 계산 중(수백 ms)에도 이동·채팅이 끊기지 않음. 끝나면 현재 경주면 즉시 알림.
+  const oddsWorker = new Worker(path.join(__dirname, 'odds-worker.js'));
+  oddsWorker.unref();
+  const pendingOdds = new Map();
+  oddsWorker.on('message', ({ id, odds }) => {
+    const r = pendingOdds.get(id); pendingOdds.delete(id);
+    if (!r) return;
+    r.odds = odds;
+    if (r === race) broadcast({ t: 'race', race: raceView(race, false) });
+  });
+  oddsWorker.on('error', (e) => log('배당 워커 오류:', e.message));
+  function computeOdds(r) { if (r.odds || pendingOdds.has(r.id)) return; pendingOdds.set(r.id, r); oddsWorker.postMessage({ id: r.id, card: r.card, seed: r.oddsSeed, sims: o.oddsSims }); }
   function raceView(r, full) {
     const v = {
       id: r.id, phase: r.phase, startAt: r.startAt, betEnd: r.startAt + PH.betEnd, closeEnd: r.startAt + PH.closeEnd, raceEnd: r.startAt + PH.raceEnd, next: r.startAt + o.cycleMs,
@@ -126,7 +139,7 @@ function createServer(opts = {}) {
       settle(race);
       broadcast({ t: 'phase', phase: 'result', id: race.id });
       nextOdds = makeRace(race.id + 1, race.startAt + o.cycleMs);
-      setImmediate(() => { if (nextOdds && !nextOdds.odds) computeOdds(nextOdds); });
+      computeOdds(nextOdds);
     }
     if (race.poolDirty && race.phase === 'betting' && now - (race.poolAt || 0) > 1000) { race.poolDirty = false; race.poolAt = now; broadcast({ t: 'pool', id: race.id, pool: race.pool }); }
   }
@@ -162,22 +175,45 @@ function createServer(opts = {}) {
   }
 
   function hasOpenBets(h) { return race && !race.settled && race.bets.some((b) => b.h === h); }
+  // ---------- 파산 감옥 (안은 벼밭) ----------
+  const JAIL_SPOT = () => W.clampJail(W.ZONES.jailIn.x + 30 + Math.random() * 20, W.ZONES.jailIn.y + 40 + Math.random() * 30);
+  const rice = RICE.map(() => 0); // 각 벼가 다시 익는 시각 (0 = 익어 있음)
   function checkBankrupt(p) {
     if (!p || p.jail > Date.now() || p.coins >= CFG.MIN_BET || hasOpenBets(p.h)) return;
-    p.jail = Date.now() + o.jailMs; p.stats.bankrupt++;
+    p.jail = Date.now() + o.jailMs; p.rice = 0; p.stats.bankrupt++;
     markDirty();
     const s = byToken.get(p.h);
-    if (s) { [s.x, s.y] = W.clampCage(W.ZONES.cageIn.x + 44, W.ZONES.cageIn.y + 40); s.moved = true; send(s, { t: 'me', me: me(p), x: s.x, y: s.y }); broadcast({ t: 'jail', id: s.id, until: p.jail, x: s.x, y: s.y }); }
+    if (s) { [s.x, s.y] = JAIL_SPOT(); s.moved = true; send(s, { t: 'me', me: me(p), x: s.x, y: s.y }); broadcast({ t: 'jail', id: s.id, until: p.jail, x: s.x, y: s.y }); }
+  }
+  // why: 'sold'(쌀 판매) · 'lucky'(벼 베다 탈출) · 'time'(시간 만료)
+  function release(s, why) {
+    const p = s.p;
+    p.jail = 0; p.rice = 0; p.coins += CFG.BAILOUT; markDirty();
+    s.x = W.ZONES.jail.x - 10; s.y = W.ZONES.jail.y + W.ZONES.jail.h - 14; s.moved = true;
+    send(s, { t: 'freed', why });
+    send(s, { t: 'me', me: me(p), x: s.x, y: s.y });
+    broadcast({ t: 'jail', id: s.id, until: 0, x: s.x, y: s.y, why });
   }
   function tickJail(now) {
-    for (const s of sessions.values()) {
-      const p = s.p;
-      if (!p || !p.jail || p.jail > now) continue;
-      p.jail = 0; p.coins += CFG.BAILOUT; markDirty();
-      s.x = W.ZONES.cage.x - 12; s.y = W.ZONES.cage.y + 70; s.moved = true;
-      send(s, { t: 'me', me: me(p), x: s.x, y: s.y });
-      broadcast({ t: 'jail', id: s.id, until: 0, x: s.x, y: s.y });
-    }
+    for (const s of sessions.values()) if (s.p && s.p.jail && s.p.jail <= now) release(s, 'time');
+  }
+  function onRice(s, m) {
+    const now = Date.now();
+    if (!isInt(m.id, 0, RICE.length - 1) || !(s.p.jail > now) || rice[m.id] > now) return;
+    if (now - (s.riceAt || 0) < CFG.RICE_COOLDOWN_MS) return;
+    const k = RICE[m.id];
+    if (Math.hypot(k.x - s.x, k.y - s.y) > 26) return;
+    s.riceAt = now; rice[m.id] = now + CFG.RICE_REGROW_MS;
+    s.p.rice = (s.p.rice || 0) + 1; markDirty();
+    broadcast({ t: 'rice', id: m.id, at: rice[m.id], by: s.id });
+    if (Math.random() < CFG.ESCAPE_CHANCE) return release(s, 'lucky');
+    send(s, { t: 'me', me: me(s.p) });
+  }
+  function onSell(s) {
+    const n = NPCS.find((q) => q.id === 'farmer');
+    if (!(s.p.jail > Date.now()) || Math.hypot(n.x - s.x, n.y - s.y) > 40) return;
+    if ((s.p.rice || 0) < CFG.RICE_NEED) return send(s, { t: 'err', code: 'rice', text: `쌀이 ${CFG.RICE_NEED - (s.p.rice || 0)}개 더 필요해요.` });
+    release(s, 'sold');
   }
 
   // ---------- 광석 ----------
@@ -218,14 +254,14 @@ function createServer(opts = {}) {
     const old = byToken.get(h);
     if (old && old !== s) { send(old, { t: 'kicked', text: '다른 창에서 같은 계정으로 접속해서 연결이 끊겼어요.' }); old.ws.close(4001, 'dup'); dropSession(old); }
     s.p = p; s.h = h; byToken.set(h, s);
-    if (p.jail > Date.now()) [s.x, s.y] = W.clampCage(W.ZONES.cageIn.x + 44, W.ZONES.cageIn.y + 40);
+    if (p.jail > Date.now()) [s.x, s.y] = JAIL_SPOT();
     else { const z = W.ZONES.spawn; s.x = z.x + 8 + Math.random() * (z.w - 16); s.y = z.y + 8 + Math.random() * (z.h - 16); }
     s.lastMove = Date.now(); s.budget = 0;
     markDirty();
     send(s, {
       t: 'welcome', id: s.id, token: fresh ? token : undefined, me: me(p), x: s.x, y: s.y, now: Date.now(),
       players: [...sessions.values()].filter((q) => q.p && q !== s).map(pub),
-      race: race ? raceView(race, true) : null, bets: myBets(h), rocks: rocks.map((r) => [r.id, r.hp]), cycleMs: o.cycleMs, phases: PH, board: board()
+      race: race ? raceView(race, true) : null, bets: myBets(h), rocks: rocks.map((r) => [r.id, r.hp]), rice, cycleMs: o.cycleMs, phases: PH, board: board()
     });
     broadcast({ t: 'join', p: pub(s) }, s);
     log('접속', name, sessions.size);
@@ -249,7 +285,7 @@ function createServer(opts = {}) {
     const dist = Math.hypot(x - s.x, y - s.y);
     const jailed = s.p.jail > now;
     let ok = dist <= s.budget;
-    if (ok && jailed) [x, y] = W.clampCage(x, y);
+    if (ok && jailed) [x, y] = W.clampJail(x, y);
     else if (ok) { const mx = (x + s.x) / 2, my = (y + s.y) / 2; ok = !W.blocked(x, y) && !W.blocked(mx, my); }
     if (!ok) { s.bad = (s.bad || 0) + 1; return send(s, { t: 'fix', x: s.x, y: s.y }); }
     s.budget -= dist;
@@ -275,7 +311,7 @@ function createServer(opts = {}) {
   function onBet(s, m) {
     const now = Date.now();
     if (!race || race.phase !== 'betting' || !race.odds || m.race !== race.id) return send(s, { t: 'err', code: 'closed', text: '지금은 베팅할 수 없어요.' });
-    if (s.p.jail > now) return send(s, { t: 'err', code: 'jail', text: '감옥에서는 베팅할 수 없어요.' });
+    if (s.p.jail > now) return send(s, { t: 'err', code: 'jail', text: '감옥에 갇혀 있는 동안에는 베팅할 수 없어요.' });
     const n = race.card.length;
     let key, odds;
     if (m.type === 'win' || m.type === 'place') { if (!isInt(m.key, 0, n - 1)) return; key = m.key; odds = race.odds[m.type][key]; }
@@ -301,7 +337,7 @@ function createServer(opts = {}) {
   function onBuy(s, m) {
     if (typeof m.item !== 'string' || !Object.hasOwn(ITEM, m.item)) return;
     const it = ITEM[m.item], p = s.p;
-    if (p.jail > Date.now()) return send(s, { t: 'err', code: 'jail', text: '감옥에서는 살 수 없어요.' });
+    if (p.jail > Date.now()) return send(s, { t: 'err', code: 'jail', text: '감옥에 갇혀 있는 동안에는 살 수 없어요.' });
     if (p.owned.includes(it.id)) return;
     if (p.coins < it.price) return send(s, { t: 'err', code: 'funds', text: '코인이 부족해요.' });
     p.coins -= it.price; p.owned.push(it.id); p.eq[it.slot] = it.id; markDirty();
@@ -330,7 +366,7 @@ function createServer(opts = {}) {
     broadcast({ t: 'emote', id: s.id, e: m.e });
   }
 
-  const HANDLERS = { move: onMove, mine: onMine, bet: onBet, cancel: onCancel, buy: onBuy, equip: onEquip, chat: onChat, emote: onEmote };
+  const HANDLERS = { move: onMove, mine: onMine, rice: onRice, sell: onSell, bet: onBet, cancel: onCancel, buy: onBuy, equip: onEquip, chat: onChat, emote: onEmote };
   function onMessage(s, raw) {
     if (!take(s.msgB)) { if (++s.flood > 20) s.ws.close(4008, 'flood'); return; }
     let m;
@@ -347,14 +383,49 @@ function createServer(opts = {}) {
     return Object.values(db.profiles).filter((p) => p.seen > week).sort((a, b) => b.coins - a.coins).slice(0, 10).map((p) => ({ name: p.name, coins: p.coins, best: p.stats.best }));
   }
 
+  // ---------- 위치 스냅샷 (관심 영역 AOI) ----------
+  // 20Hz 판정, 10Hz 전송. 각 접속자에게는 자기 주변(화면보다 넉넉한 사각형) 플레이어만, 그중 가까운 순 최대 AOI_MAX명.
+  // 1초마다 움직이지 않은 사람도 포함한 '키프레임'을 보내 시야에 새로 들어온 사람의 위치를 맞춘다.
+  // 경주 중 트랙 근처에 있는 사람은 클라이언트가 경기장 전체 화면으로 전환하므로 경기장 영역도 함께 본다.
+  const SNAP_EVERY = 2, KEY_EVERY = 10, AOI_X = 260, AOI_Y = 170, AOI_MAX = 80, CELL = 128;
+  let snapN = 0, keyN = 0;
+  const STAND = { x0: W.TRACK.cx - 340, x1: W.TRACK.cx + 340, y0: W.TRACK.cy - 240, y1: W.TRACK.cy + 240 };
+  function sendSnaps(now) {
+    const key = ++keyN % KEY_EVERY === 0, grid = new Map(), rcv = new Map();
+    for (const s of sessions.values()) {
+      if (!s.p) continue;
+      const k = (Math.floor(s.x / CELL) << 8) | Math.floor(s.y / CELL);
+      let r = rcv.get(k); if (!r) rcv.set(k, (r = [])); r.push(s);
+      if (!s.moved && !key) continue;
+      s.moved = false;
+      s.ent = '[' + s.id + ',' + Math.round(s.x) + ',' + Math.round(s.y) + ',' + s.dir + ',' + (s.run ? 1 : 0) + ']';
+      let c = grid.get(k); if (!c) grid.set(k, (c = [])); c.push(s);
+    }
+    if (!grid.size) return;
+    const wideRace = race && race.phase === 'race';
+    // 같은 칸(128px)에 있는 사람들은 같은 메시지를 공유 → 칸 수만큼만 계산·직렬화
+    for (const [k, list] of rcv) {
+      const gx = k >> 8, gy = k & 255, cx = (gx + 0.5) * CELL, cy = (gy + 0.5) * CELL;
+      const boxes = [{ x0: gx * CELL - AOI_X, x1: (gx + 1) * CELL + AOI_X, y0: gy * CELL - AOI_Y, y1: (gy + 1) * CELL + AOI_Y }];
+      if (wideRace && cx > STAND.x0 && cx < STAND.x1 && cy > STAND.y0 && cy < STAND.y1) boxes.push(STAND);
+      const seen = new Set(), out = [];
+      for (const b of boxes) for (let ix = Math.floor(b.x0 / CELL); ix <= Math.floor(b.x1 / CELL); ix++) for (let iy = Math.floor(b.y0 / CELL); iy <= Math.floor(b.y1 / CELL); iy++) {
+        const c = grid.get((ix << 8) | iy); if (!c) continue;
+        for (const s of c) if (!seen.has(s) && s.x >= b.x0 && s.x <= b.x1 && s.y >= b.y0 && s.y <= b.y1) { seen.add(s); out.push(s); }
+      }
+      if (!out.length || (out.length === 1 && list.length === 1 && out[0] === list[0])) continue;
+      if (out.length > AOI_MAX) { for (const s of out) s.d2 = (s.x - cx) ** 2 + (s.y - cy) ** 2; out.sort((a, b) => a.d2 - b.d2); out.length = AOI_MAX; }
+      const msg = '{"t":"snap","now":' + now + ',"p":[' + out.map((s) => s.ent).join(',') + ']}';
+      for (const r of list) send(r, msg);
+    }
+  }
+
   // ---------- 틱 ----------
   let tickN = 0;
   function tick() {
     const now = Date.now();
     tickRace(now); tickJail(now); tickRocks(now);
-    const moved = [];
-    for (const s of sessions.values()) if (s.p && s.moved) { s.moved = false; moved.push([s.id, s.x, s.y, s.dir, s.mv ? 1 : 0, s.run ? 1 : 0]); }
-    if (moved.length) broadcast({ t: 'snap', p: moved, now });
+    if (++snapN % SNAP_EVERY === 0) sendSnaps(now);
     if (++tickN % 600 === 0) broadcast({ t: 'board', board: board() });
     if (tickN % 200 === 0) persist();
   }
@@ -415,7 +486,9 @@ function createServer(opts = {}) {
     log(`서버 시작 http://localhost:${server.address().port} (주기 ${o.cycleMs / 1000}s)`);
     resolve({
       port: server.address().port, sessions, db, get race() { return race; },
-      close: () => new Promise((r) => { clearInterval(loop); clearInterval(heartbeat); dirty = true; persist(); for (const s of sessions.values()) s.ws.terminate(); wss.close(); server.close(() => r()); })
+      // 테스트용: 해당 닉네임을 즉시 파산시킴
+      bankrupt: (name) => { const p = Object.values(db.profiles).find((q) => q.name === name); if (p) { p.coins = 0; checkBankrupt(p); } },
+      close: () => new Promise((r) => { clearInterval(loop); clearInterval(heartbeat); oddsWorker.terminate(); dirty = true; persist(); for (const s of sessions.values()) s.ws.terminate(); wss.close(); server.close(() => r()); })
     });
   }));
 }

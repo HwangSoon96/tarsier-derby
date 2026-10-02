@@ -172,7 +172,7 @@
   }
   const IMPACT_T = 0.6;
   // 손은 어깨를 중심으로 호를 그리고, 도구는 손에서 같은 각도로 뻗는다. 팔(소매)도 함께 그려 손과 몸이 끊기지 않게.
-  function pickaxe(g, ox, oy, dir, t, behindPass, sleeve) {
+  function pickaxe(g, ox, oy, dir, t, behindPass, sleeve, tool) {
     const pose = POSE[dir], fl = FLIP[dir] ? -1 : 1, deg = swingAngle(t), a = (deg * Math.PI) / 180;
     let sx, sy, hx, hy, vx, vy, behind;
     if (pose === 'front' || pose === 'back') {
@@ -197,10 +197,19 @@
     const arm = sleeve || '#c8774a';
     for (let i = 0; i <= 5; i++) { const t2 = i / 5; R(g, X(sx + (hx - sx) * t2), oy + sy + (hy - sy) * t2, 2, 2, arm); }
     // 손잡이 (1px, 정수 스냅)
-    const len = 12;
+    const len = tool === 'sickle' ? 8 : 12;
     for (let i = 1; i <= len; i++) R(g, X(Math.round(hx + vx * i)), oy + Math.round(hy + vy * i), 1, 1, i < 3 ? '#a8784a' : '#8a5a32');
-    // 곡괭이 머리: 손잡이 끝에서 수직으로 양쪽 뾰족
     const tx = hx + vx * len, ty = hy + vy * len, px = -vy, py = vx;
+    if (tool === 'sickle') {
+      // 낫: 손잡이 끝에서 앞쪽으로 휘어 나가는 초승달 날
+      for (let i = 0; i <= 8; i++) {
+        const a2 = (i / 8) * Math.PI * 0.9, qx = tx + vx * Math.sin(a2) * 4 + px * (1 - Math.cos(a2)) * 4.5, qy = ty + vy * Math.sin(a2) * 4 + py * (1 - Math.cos(a2)) * 4.5;
+        R(g, X(Math.round(qx)), oy + Math.round(qy), 1, 1, i > 5 ? '#ffffff' : '#c8ccd8');
+      }
+      R(g, X(Math.round(hx)) - (fl < 0 ? 1 : 0), oy + Math.round(hy) - 1, 2, 2, '#f1bf96');
+      return;
+    }
+    // 곡괭이 머리: 손잡이 끝에서 수직으로 양쪽 뾰족
     for (let i = -5; i <= 5; i++) {
       const bend = Math.abs(i) * 0.25;              // 양끝이 손 쪽으로 살짝 휨
       const qx = Math.round(tx + px * i - vx * bend), qy = Math.round(ty + py * i - vy * bend);
@@ -344,11 +353,18 @@
       P(-7, -24 + b, 14, 12, '#7ed36a'); P(-6, -25 + b, 12, 1, '#7ed36a'); P(-7, -14 + b, 14, 2, '#5cbf5a');
       P(-5, -21 + b, 4, 5, '#1c140f'); P(1, -21 + b, 4, 5, '#1c140f'); if (!blink) { P(-4, -20 + b, 1, 2, '#fff'); P(2, -20 + b, 1, 2, '#fff'); }
       P(-2, -15 + b, 4, 1, '#2f7a33'); P(-4, -29 + b, 1, 4, '#5cbf5a'); P(3, -29 + b, 1, 4, '#5cbf5a'); P(-5, -31 + b, 3, 2, '#ffe070'); P(2, -31 + b, 3, 2, '#ffe070');
-    } else if (id === 'guard') {
+    } else if (id === 'farmer') {
       const b = Math.round(Math.sin(t * 1.6));
-      P(-5, -9, 10, 9, '#2a3a6a'); P(-5, -9, 10, 1, '#4a5a8a'); P(-1, -8, 2, 2, '#f2c230');
-      P(-6, -20 + b, 12, 11, '#c8ccd8'); P(-4, -17 + b, 8, 4, '#1c2a3a'); P(-3, -16 + b, 2, 2, '#ff4040'); P(1, -16 + b, 2, 2, '#ff4040');
-      P(-7, -22 + b, 14, 3, '#2a3a6a'); P(-2, -25 + b, 4, 3, Math.floor(t * 3) % 2 ? '#3b78ff' : '#ff3b3b');
+      // 몸통(작업복) · 다리
+      P(-4, -3, 3, 3, '#4a3a2a'); P(1, -3, 3, 3, '#4a3a2a');
+      P(-5, -11, 10, 9, '#3f7a4a'); P(-5, -11, 10, 1, '#5a9a62'); P(-3, -10, 1, 6, '#2a5a34'); P(2, -10, 1, 6, '#2a5a34');
+      // 로봇 머리: 둥근 금속 + 초록 눈
+      P(-5, -20 + b, 10, 9, '#c8ccd8'); P(-5, -20 + b, 10, 1, '#e8ecf4'); P(-3, -17 + b, 6, 3, '#1c2a3a');
+      P(-2, -16 + b, 1, 1, blink ? '#1c2a3a' : '#7cff6a'); P(1, -16 + b, 1, 1, blink ? '#1c2a3a' : '#7cff6a');
+      // 밀짚모자
+      P(-9, -21 + b, 18, 2, '#e8c46a'); P(-9, -20 + b, 18, 1, '#c99a3f'); P(-5, -25 + b, 10, 4, '#f0d080'); P(-5, -22 + b, 10, 1, '#c0392b');
+      // 볏단 바구니
+      P(5, -9, 6, 6, '#a8784a'); P(5, -9, 6, 1, '#c8986a'); P(6, -13, 1, 4, '#e8c860'); P(8, -14, 1, 5, '#f0d070'); P(10, -12, 1, 3, '#e8c860');
     }
   }
 
@@ -405,18 +421,28 @@
         for (let x = 0; x < 240; x += 40) R(g, x, 0, 2, 28, '#6a7088');
         break;
       }
-      case 'cage': {
-        [c, g] = mk(112, 96);
-        R(g, 0, 8, 112, 88, 'rgba(0,0,0,0)');
-        R(g, 0, 8, 112, 4, '#5a6078'); R(g, 0, 86, 112, 6, '#5a6078');
-        for (let x = 0; x <= 108; x += 6) { R(g, x, 10, 2, 78, '#9aa2b8'); R(g, x, 10, 1, 78, '#c8ccd8'); }
-        R(g, 0, 10, 4, 82, '#5a6078'); R(g, 108, 10, 4, 82, '#5a6078');
-        R(g, 30, 0, 52, 10, '#d94a3a'); text(g, 'JAIL', 48, 2, '#ffffff');
-        break;
-      }
-      case 'cageBack': {
-        [c, g] = mk(112, 96);
-        R(g, 4, 12, 104, 76, '#4a4038'); for (let y = 12; y < 88; y += 8) R(g, 4, y, 104, 1, '#3a3028'); for (let x = 4; x < 108; x += 12) R(g, x, 12, 1, 76, '#3a3028');
+      case 'barsBack': case 'barsFront': {
+        // 감옥 쇠창살: 위·아래 철골 + 세로 창살(밝은 면 1px). 뒤(위쪽 변 + 좌우 변)와 앞(아래쪽 변)을 나눠 y정렬.
+        const Z = window.WORLD.ZONES.jail;
+        [c, g] = mk(Z.w, Z.h + 12);
+        const beam = (x0, x1, y) => { R(g, x0, y, x1 - x0, 3, '#5a6078'); R(g, x0, y, x1 - x0, 1, '#8a92aa'); R(g, x0, y + 3, x1 - x0, 1, '#3a3e50'); };
+        const bars = (x0, x1, y0, y1) => { for (let x = x0; x <= x1 - 2; x += 5) { R(g, x, y0, 2, y1 - y0, '#9aa2b8'); R(g, x, y0, 1, y1 - y0, '#d8dce8'); R(g, x + 1, y1 - 1, 1, 1, '#5a6078'); } };
+        const post = (x, y0, y1) => { R(g, x, y0, 4, y1 - y0, '#4a4e62'); R(g, x, y0, 1, y1 - y0, '#7a82a0'); R(g, x - 1, y0 - 1, 6, 2, '#6a7290'); };
+        if (id === 'barsBack') {
+          // 뒷벽: 창살 + 위 철골, 좌우 벽 기둥
+          bars(4, Z.w - 4, 2, 13); beam(0, Z.w, 1); beam(0, Z.w, 12);
+          post(0, 0, Z.h + 2); post(Z.w - 4, 0, Z.h + 2);
+          for (let y = 18; y < Z.h - 4; y += 5) { R(g, 1, y, 2, 2, '#9aa2b8'); R(g, Z.w - 3, y, 2, 2, '#9aa2b8'); }
+          R(g, Z.w / 2 - 18, 0, 36, 9, '#d94a3a'); R(g, Z.w / 2 - 18, 0, 36, 1, '#ff7a6a'); R(g, Z.w / 2 - 18, 8, 36, 1, '#8a2a20'); text(g, 'JAIL', Z.w / 2 - 8, 2, '#ffffff');
+        } else {
+          // 앞벽: 낮은 창살(안의 벼밭이 보이도록) + 왼쪽 아래 창살문(자물쇠)
+          const y0 = Z.h - 4, y1 = Z.h + 9;
+          bars(4, 18, y0, y1); bars(44, Z.w - 4, y0, y1); beam(0, Z.w, y0 - 1); beam(0, Z.w, y1 - 1);
+          R(g, 18, y0, 26, y1 - y0, 'rgba(0,0,0,0)'); bars(20, 42, y0 + 1, y1 - 1);
+          R(g, 18, y0, 2, y1 - y0, '#3a3e50'); R(g, 42, y0, 2, y1 - y0, '#3a3e50');
+          R(g, 38, y0 + 4, 4, 4, '#f2c230'); R(g, 39, y0 + 5, 2, 1, '#8a6a10');
+          post(0, y0 - 2, y1); post(Z.w - 4, y0 - 2, y1);
+        }
         break;
       }
       case 'dish': {
@@ -470,5 +496,107 @@
     return outline(c);
   }
 
-  window.ART = { mk, R, shade, mix, outline, text, textW, person, hat, pickaxe, swingAngle, IMPACT_T, tarsier, tarsierFront, ride, RIDE, pet, npc, prop, emoteIcon, POSE, FLIP };
+  // ---------- 타이틀 로고: '화성간건호' ----------
+  // 표지 스티커 스타일(남색+분홍 글자, 두꺼운 흰 테두리, 살짝 기울임)을 픽셀아트로 옮김.
+  // 글자는 갈무리 비트맵 글꼴을 원래 크기로 그린 뒤 알파를 0/1로 자르고 굵게(오른쪽 1px) 만든다.
+  function crispText(s, px, col, k = 1) {
+    const [m, mg] = mk(px * s.length + 8, px * 2);
+    mg.font = `bold ${px}px Galmuri11, monospace`; mg.textBaseline = 'top'; mg.fillStyle = '#fff'; mg.fillText(s, 2, Math.round(px / 3));
+    const d = mg.getImageData(0, 0, m.width, m.height).data, on = (x, y) => d[(y * m.width + x) * 4 + 3] > 110;
+    // 실제 잉크 영역만 잘라냄 (위·아래 여백과 잘림 방지)
+    let x0 = m.width, x1 = -1, y0 = m.height, y1 = -1;
+    for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) if (on(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const [c, g] = mk((x1 - x0 + 1) * k, (y1 - y0 + 1) * k);
+    g.fillStyle = col;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (on(x, y)) g.fillRect((x - x0) * k, (y - y0) * k, k, k);
+    c.top = (y0 - Math.round(px / 3)) * k;
+    return c;
+  }
+  // 캨버스 알파 실루엣을 r픽셀 두께로 키운 테두리(단색)
+  function rim(src, r, col) {
+    const [c, g] = mk(src.width + r * 2, src.height + r * 2), d = src.getContext('2d').getImageData(0, 0, src.width, src.height).data;
+    g.fillStyle = col;
+    for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) if (d[(y * src.width + x) * 4 + 3] > 0)
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r) g.fillRect(x + r + dx, y + r + dy, 1, 1);
+    return c;
+  }
+  // 모자 쓴 원숭이 마스코트 (표지 캐릭터 참고, 26x24)
+  function logoMascot() {
+    const [c, g] = mk(28, 26), P = (x, y, w, h, col) => R(g, x, y, w, h, col);
+    // 귀
+    P(2, 12, 5, 6, '#a0652e'); P(3, 13, 3, 4, '#f2c9a0'); P(21, 12, 5, 6, '#a0652e'); P(22, 13, 3, 4, '#f2c9a0');
+    // 머리
+    P(6, 8, 16, 14, '#a0652e'); P(5, 10, 18, 10, '#a0652e'); P(7, 21, 14, 2, '#8a5424');
+    // 얼굴
+    P(8, 12, 12, 9, '#f2c9a0'); P(7, 14, 14, 6, '#f2c9a0'); P(9, 21, 10, 1, '#f2c9a0');
+    // 눈 (반짝이는 큰 눈)
+    P(9, 14, 3, 4, '#1c2a5e'); P(16, 14, 3, 4, '#1c2a5e'); P(9, 14, 1, 1, '#fff'); P(16, 14, 1, 1, '#fff'); P(11, 17, 1, 1, '#6a8ae8'); P(18, 17, 1, 1, '#6a8ae8');
+    // 볼·입
+    P(7, 18, 2, 2, '#ff8aa8'); P(19, 18, 2, 2, '#ff8aa8'); P(13, 19, 2, 2, '#d23a5a'); P(13, 19, 2, 1, '#7a1a2a');
+    // 버킷햇
+    P(8, 3, 12, 6, '#2f5fd8'); P(9, 2, 10, 1, '#2f5fd8'); P(3, 8, 22, 3, '#2a4fb8'); P(2, 10, 24, 1, '#1e3c96');
+    P(10, 3, 3, 1, '#7aa2ff'); P(8, 7, 12, 1, '#1e3c96');
+    return outline(c, 0.45);
+  }
+  function logo() {
+    const NAVY = '#1c2a5e', PINK = '#ff5c8a';
+    const PX = 12, a = crispText('화성간', PX, NAVY, 2), b = crispText('건호', PX, PINK, 2), q = crispText('?', PX, NAVY, 2);
+    const sp = 3, tw = a.width + b.width + q.width + sp * 2, th = Math.max(a.height, b.height) + 2;
+    const [word, wg] = mk(tw, th);
+    // 표지처럼 묶음마다 살짝 오르내리는 바운스 (기준선은 글꼴 top 보정값)
+    wg.drawImage(a, 0, 1 + a.top - Math.min(a.top, b.top)); wg.drawImage(b, a.width + sp, b.top - Math.min(a.top, b.top));
+    wg.drawImage(q, a.width + b.width + sp * 2, th - q.height);
+    // 획마다 아래쪽 가장자리 1px만 어둡게 (볼록한 두께감, 획이 뭉개지지 않게)
+    const wd = wg.getImageData(0, 0, tw, th), pd = wd.data, A_ = (x, y) => (y < th ? pd[(y * tw + x) * 4 + 3] : 0);
+    const sh = []; for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) if (A_(x, y) && !A_(x, y + 1)) sh.push(x, y);
+    for (let i = 0; i < sh.length; i += 2) { const k = (sh[i + 1] * tw + sh[i]) * 4; pd[k] *= 0.62; pd[k + 1] *= 0.62; pd[k + 2] *= 0.7; }
+    wg.putImageData(wd, 0, 0);
+    const white = rim(word, 3, '#ffffff'), edge = rim(white, 1, '#14204a');
+    const W = edge.width + 6, H = edge.height + 26;
+    const [c, g] = mk(W, H);
+    const ox = Math.round(W / 2), ty = H - edge.height - 3;
+    // 뒷배경: 고리 달린 화성 (왼쪽), 별 반짝임
+    const [pl, pg] = mk(34, 22), pcx = 17, pcy = 11;
+    pg.fillStyle = '#c4532e'; pg.beginPath(); pg.arc(pcx, pcy, 9, 0, Math.PI * 2); pg.fill();
+    pg.fillStyle = '#e8743a'; pg.beginPath(); pg.arc(pcx - 1, pcy - 1, 7.5, 0, Math.PI * 2); pg.fill();
+    pg.fillStyle = '#f59a62'; pg.beginPath(); pg.arc(pcx - 3, pcy - 3, 4, 0, Math.PI * 2); pg.fill();
+    R(pg, pcx - 5, pcy + 1, 3, 2, '#b04a26'); R(pg, pcx + 3, pcy - 4, 2, 2, '#b04a26'); R(pg, pcx + 1, pcy + 4, 3, 2, '#b04a26');
+    const crisp = (src) => { const x = src.getContext('2d'), d = x.getImageData(0, 0, src.width, src.height); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 100 ? 255 : 0; x.putImageData(d, 0, 0); return src; };
+    crisp(pl);
+    // 고리: 뒷부분은 행성 뒤로 숨기고 앞부분만 그린다
+    R(pg, 1, pcy + 1, 32, 1, '#ffd8a8'); R(pg, 0, pcy + 2, 4, 1, '#ffd8a8'); R(pg, 30, pcy, 4, 1, '#ffd8a8');
+    g.drawImage(outline(pl, 0.45), 4, 4);
+    const star = (x, y, col) => { R(g, x, y - 1, 1, 3, col); R(g, x - 1, y, 3, 1, col); };
+    star(46, 4, '#fff6c0'); star(W - 8, 9, '#fff6c0'); R(g, W - 22, 3, 1, 1, '#fff6c0'); R(g, 40, 14, 1, 1, '#fff6c0');
+    // 물음표 (파랑·분홍) — 마스코트 양옆
+    const qm = (x, y, col) => { const [q, qg] = mk(8, 12); const P = (a, b, w, h) => R(qg, a, b, w, h, col); P(2, 1, 4, 1); P(1, 2, 2, 2); P(5, 2, 2, 2); P(4, 4, 2, 1); P(3, 5, 2, 2); P(3, 8, 2, 2); g.drawImage(outline(q, 0.45), x, y); };
+    qm(ox - 27, 6, '#2f5fd8'); qm(ox + 17, 2, '#ff5c8a');
+    // 마스코트: 턱이 글자 뒤로 들어가 스티커 위로 고개를 내민 모습
+    g.drawImage(logoMascot(), ox - 14, ty - 24);
+    // 글자: 그림자 → 남색 외곽 → 흰 테두리 → 본문
+    g.globalAlpha = 0.4; g.drawImage(rim(edge, 0, '#000'), 3, ty + 3); g.globalAlpha = 1;
+    g.drawImage(edge, 3, ty); g.drawImage(white, 4, ty + 1); g.drawImage(word, 7, ty + 4);
+    // 앞발: 스티커 가장자리를 잡고 있음
+    for (const hx of [ox - 10, ox + 5]) { R(g, hx - 1, ty, 7, 5, '#5a3418'); R(g, hx, ty + 1, 5, 3, '#a0652e'); R(g, hx + 1, ty + 1, 3, 1, '#c08850'); R(g, hx + 1, ty + 3, 1, 1, '#5a3418'); R(g, hx + 3, ty + 3, 1, 1, '#5a3418'); }
+    return c;
+  }
+
+  // 벼 한 포기 (16x20, 발 기준 (8,18)). stage 0=그루터기 1=새싹 2=푸른 벼 3=익은 벼(황금 이삭), sway=-1..1
+  function rice(stage, sway) {
+    const [c, g] = mk(16, 20), P = (x, y, w, h, col) => R(g, x, y, w, h, col);
+    P(3, 17, 10, 2, '#5a3a22');
+    if (stage === 0) { for (const x of [5, 7, 9, 11]) P(x, 15, 1, 2, '#b89a5a'); return outline(c, 0.4); }
+    const hgt = stage === 1 ? 6 : 12, leaf = stage === 3 ? '#8aa83a' : '#4f9a3a', dark = stage === 3 ? '#6a8a2a' : '#3a7a2a';
+    for (const [x, dx] of [[5, -1], [7, 0], [9, 0], [11, 1]]) for (let i = 0; i < hgt; i++) {
+      const k = i / hgt, xx = Math.round(x + dx * k * 2 + sway * k * k * 2);
+      P(xx, 16 - i, 1, 1, i % 3 ? leaf : dark);
+    }
+    if (stage === 3) for (const [x, dx] of [[7, 0], [9, 0], [5, -1], [11, 1]]) {
+      const tx = Math.round(x + dx * 2 + sway * 2), ty = 4;
+      P(tx, ty, 2, 2, '#f2c84a'); P(tx + (dx || 1), ty + 2, 2, 2, '#e8b830'); P(tx + (dx || 1) * 2, ty + 4, 1, 2, '#c99a1a'); P(tx, ty, 1, 1, '#fff0a0');
+    }
+    return outline(c, 0.4);
+  }
+
+  window.ART = { rice, logo, mk, R, shade, mix, outline, text, textW, person, hat, pickaxe, swingAngle, IMPACT_T, tarsier, tarsierFront, ride, RIDE, pet, npc, prop, emoteIcon, POSE, FLIP };
 })();

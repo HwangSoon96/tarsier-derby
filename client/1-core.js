@@ -1,8 +1,8 @@
-// 안경원숭이 더비 클라이언트 (빌드 시 client/*.js 를 public/game.js 로 합침)
+// 화성간건호 클라이언트 (빌드 시 client/*.js 를 public/game.js 로 합침)
 (function () {
   'use strict';
   const W = window.WORLD, RACE = window.RACE, A = window.ART, AU = window.AUDIO, S = AU.SFX;
-  const { CFG, TRACK, ZONES, NPCS, ROCKS, ITEM, ITEMS, SLOTS, STABLE, STYLE_KO, COND, EMOTES } = W;
+  const { CFG, TRACK, ZONES, NPCS, ROCKS, RICE, ITEM, ITEMS, SLOTS, STABLE, STYLE_KO, COND, EMOTES } = W;
   const $ = (id) => document.getElementById(id);
   // DOM 헬퍼: 사용자 문자열은 항상 텍스트 노드로만 넣는다 (XSS 차단)
   function h(tag, attrs, ...kids) {
@@ -20,6 +20,7 @@
   const G = {
     mode: 'title', id: 0, me: null, players: new Map(), race: null, practice: null, prevRace: null, prevUntil: 0,
     rocks: ROCKS.map((r) => ({ ...r, hp: CFG.ROCK_HP, hitAt: 0, deadAt: 0, bornAt: 0 })),
+    rice: RICE.map((r) => ({ ...r, at: 0, cutAt: 0 })), // at: 다시 익는 서버 시각
     board: [], myBets: [], offset: 0, rtt: 0, connected: false, wantConn: false, token: localStorage.getItem('td-token'),
     keys: new Set(), cam: { mode: 'race', x: 0, y: 0, fade: 0, fadeDir: 0, target: null, shake: 0 }, watch: true,
     parts: [], pops: [], t: 0, interact: null, lastNet: 0, betType: 'win', pick: [], amount: +(localStorage.getItem('td-amt') || 100), holdUse: false, coinShow: 0
@@ -35,7 +36,10 @@
     dpr = window.devicePixelRatio || 1;
     view.width = Math.round(innerWidth * dpr); view.height = Math.round(innerHeight * dpr);
     const race = G.cam.mode === 'race';
-    gp = race ? Math.max(1, Math.min(Math.floor(view.width / RACE_AREA.w), Math.floor(view.height / RACE_AREA.h)))
+    // 경주 화면: 정수 배율이 2 이상이면 정수, 그보다 작은 화면에서는 소수 배율로 트랙 전체를 꽉 채움(정지 카메라라 픽셀 흔들림 없음).
+    // 맵(1024x768)보다 넓게 보이지 않도록 하한을 둔다 → 화면 가장자리에 빈 띠가 생기지 않음.
+    const fit = Math.min(view.width / RACE_AREA.w, view.height / RACE_AREA.h), floor = Math.max(view.width / W.W, view.height / W.H);
+    gp = race ? Math.max(floor, fit >= 2 ? Math.floor(fit) : Math.floor(fit * 10) / 10)
       : Math.max(2, Math.round(view.height / 200));
     VW = Math.ceil(view.width / gp) + 1; VH = Math.ceil(view.height / gp) + 1;
     buf.width = VW; buf.height = VH; bx.imageSmoothingEnabled = false; vx.imageSmoothingEnabled = false;
@@ -47,7 +51,7 @@
   const cache = new Map();
   const cached = (key, make) => { let c = cache.get(key); if (!c) { if (cache.size > 8000) cache.clear(); c = make(); cache.set(key, c); } return c; };
   const PROPS = {};
-  for (const k of ['dome', 'rocket', 'shop', 'cage', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
+  for (const k of ['dome', 'rocket', 'shop', 'barsBack', 'barsFront', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
   function standsSprite(w) {
     const [c, g] = A.mk(w, 30);
     for (let r = 0; r < 4; r++) { A.R(g, 0, r * 6, w, 6, r % 2 ? '#7a8098' : '#8a90a8'); A.R(g, 0, r * 6, w, 1, '#b0b6c8'); }
@@ -88,6 +92,23 @@
     if (flip) { g.setTransform(1, 0, 0, 1, 0, 0); A.text(g, num, 32 - 16 - 3, 19, '#1c140f'); }
     return A.outline(c);
   });
+  // 감옥에 갇힌 사람: 셔츠 색 유니폼을 입은 안경원숭이 + 손에 든 작은 낫. 40x34, 발 기준 (20,30).
+  // act 0~11 = 낫질 진행(위로 들었다가 앞으로 내리침), -1 = 낫을 등에 멘 상태
+  const jailSprite = (color, pose, blink, flip, act) => cached(`j${color}|${pose}|${blink}|${flip}|${act}`, () => {
+    const [c, g] = A.mk(40, 34);
+    if (flip) { g.translate(40, 0); g.scale(-1, 1); }
+    A.tarsier(g, 20, 30, color, '', pose, blink);
+    const t = act >= 0 ? act / 11 : -1;
+    // 낫 손잡이 각도: 대기 -60°(어깨 위), 들기 -130°, 내리침 +40°
+    const deg = t < 0 ? -60 : t < 0.45 ? -60 - (t / 0.45) * 70 : t < 0.6 ? -130 + ((t - 0.45) / 0.15) * 170 : 40 - ((t - 0.6) / 0.4) * 100;
+    const a = (deg * Math.PI) / 180, hx = 25, hy = 20, vx = Math.cos(a), vy = Math.sin(a);
+    for (let i = 0; i <= 6; i++) A.R(g, Math.round(hx + vx * i), Math.round(hy + vy * i), 1, 1, '#8a5a32');
+    const ex = hx + vx * 6, ey = hy + vy * 6;
+    for (let i = 0; i <= 6; i++) { const b = (i / 6) * Math.PI * 0.85; A.R(g, Math.round(ex + vx * Math.sin(b) * 3 - vy * (1 - Math.cos(b)) * 4), Math.round(ey + vy * Math.sin(b) * 3 + vx * (1 - Math.cos(b)) * 4), 1, 1, i > 3 ? '#ffffff' : '#c8ccd8'); }
+    A.R(g, hx - 1, hy - 1, 2, 2, '#c08850');
+    return A.outline(c);
+  });
+  const riceSprite = (stage, sway) => cached(`rice${stage}|${sway}`, () => A.rice(stage, sway));
   const portrait = (color, num, happy) => cached(`f${color}|${num}|${happy}`, () => { const [c, g] = A.mk(28, 30); A.tarsierFront(g, 14, 28, color, num, happy); return A.outline(c); });
   const petSprite = (id, f, right) => cached(`q${id}|${f}|${right}`, () => { const [c, g] = A.mk(24, 24); A.pet(g, 12, 22, id, f * 0.0982, right); return A.outline(c); });
   const npcSprite = (id, f) => cached(`n${id}|${f}`, () => { const [c, g] = A.mk(28, 36); A.npc(g, 14, 34, id, f / 4); return A.outline(c); });
@@ -106,14 +127,19 @@
     const img = gg.createImageData(W.W, W.H), d = img.data;
     const REG = [[150, 62, 38], [170, 76, 46], [186, 90, 54], [200, 108, 66]];
     const segs = []; for (const p of PATHS) for (let i = 0; i < p.length - 1; i++) segs.push([...p[i], ...p[i + 1]]);
-    const ci = ZONES.cageIn;
+    const pz = ZONES.jail;
     for (let y = 0; y < W.H; y++) for (let x = 0; x < W.W; x++) {
       const i = (y * W.W + x) * 4, sd = W.stadiumDist(x, y);
       const n = fbm(x & ~1, y & ~1);
       let c = REG[n < 0.38 ? 0 : n < 0.5 ? 1 : n < 0.63 ? 2 : 3];
       let pd = 99; if (y > 250 || x < 260 || x > 700) for (const s of segs) pd = Math.min(pd, segDist(x, y, s[0], s[1], s[2], s[3]));
       if (pd < 9 + vnoise(x / 5, y / 5) * 3) c = pd < 7 ? [214, 132, 86] : [204, 120, 76];
-      if (x >= ci.x - 4 && x < ci.x + ci.w + 4 && y >= ci.y - 4 && y < ci.y + ci.h + 8) c = ((x >> 3) + (y >> 3)) & 1 ? [92, 84, 80] : [84, 76, 72];
+      if (x >= pz.x && x < pz.x + pz.w && y >= pz.y + 4 && y < pz.y + pz.h + 4) {
+        // 물 댄 논: 진흙 바닥 위 얕은 물 + 잔물결, 벼 포기 자리는 젖은 흙
+        const wv = vnoise(x / 9, y / 4), dry = RICE.some((r) => Math.abs(x - r.x) < 7 && y > r.y - 3 && y < r.y + 3);
+        c = dry ? [92, 64, 40] : wv > 0.62 ? [118, 150, 150] : wv > 0.4 ? [92, 124, 120] : [80, 106, 98];
+        if (!dry && (y + Math.floor(vnoise(x / 14, y / 30) * 6)) % 7 === 0 && wv > 0.45) c = [150, 182, 176];
+      }
       if (sd < TRACK.inner - 1) {
         c = Math.floor((x + y) / 12) & 1 ? [92, 168, 72] : [84, 156, 66];
         if (sd > TRACK.inner - 4) c = [64, 128, 52];
@@ -143,8 +169,6 @@
       if (W.stadiumDist(x, y) < TRACK.outer + 4) continue;
       A.R(gg, x, y, 1 + (k % 3 === 0), 1, k % 2 ? '#7a3420' : '#e8a070');
     }
-    const big = (s, x, y, col) => { const [c, g] = A.mk(A.textW(s) + 1, 6); A.text(g, s, 0, 0, col); gg.drawImage(c, x, y, c.width * 2, c.height * 2); };
-    big('MARS', 352, 294, '#a8d890'); big('DERBY', 572, 294, '#a8d890');
   }
 
   // ---------- 정적 소품 배치 ----------
@@ -154,7 +178,10 @@
   prop('dish', 268, 70); prop('solar', 664, 150); prop('solar', 300, 150); prop('dish', 940, 360);
   prop('shop', 144, 366); prop('awning', 272, 441); prop('counter', 272, 470);
   prop('standL', 395, 474); prop('standR', 565, 474);
-  prop('cage', 856, 492, 491); prop('jumbo', 480, 340); prop('finish', 480, 349);
+  // 감옥 쇠창살: 뒤쪽(위·좌우 변)은 안의 사람보다 뒤, 앞쪽(아래 변)은 맨 앞
+  STATIC.push({ k: 'barsBack', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + 8 });
+  STATIC.push({ k: 'barsFront', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + ZONES.jail.h + 6 });
+  prop('jumbo', 480, 340); prop('finish', 480, 349);
   for (const [x, y] of [[214, 196], [746, 196], [214, 404], [746, 404]]) prop('flag', x, y);
   const ROCK_SPR = ['rock0', 'ore0', 'rock2', 'ore1', 'rock0', 'ore2', 'rock2'];
   const CROWD = [];
@@ -182,7 +209,7 @@
   function onMsg(m) {
     switch (m.t) {
       case 'welcome': return onWelcome(m);
-      case 'snap': for (const [id, x, y, d, mv, run] of m.p) { const p = G.players.get(id); if (p && id !== G.id) pushSnap(p, m.now, x, y, d, mv, run); } return;
+      case 'snap': for (const [id, x, y, d, run] of m.p) { const p = G.players.get(id); if (p && id !== G.id) pushSnap(p, m.now, x, y, d, run); } return;
       case 'join': addPlayer(m.p); sysChat(`${m.p.name} 님이 들어왔어요.`); return;
       case 'leave': { const p = G.players.get(m.id); if (p) { G.players.delete(m.id); sysChat(`${p.name} 님이 나갔어요.`); } return; }
       case 'eq': { const p = G.players.get(m.id); if (p) p.eq = m.eq; return; }
@@ -198,14 +225,24 @@
         if (p) { p.jail = m.me.jail; p.eq = m.me.eq; if (m.x != null) { p.x = m.x; p.y = m.y; } }
         if (bought) { S.buy(); toast('구매 완료! 바로 장착했어요.', 'big'); }
         if (!was && m.me.jail) onJailed();
-        if (was && !m.me.jail) { S.free(); toast(`풀려났어요! 재기 지원금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
         if (shopOpen()) renderShop();
         return;
       }
       case 'rock': return onRock(m);
       case 'chat': { const p = G.players.get(m.id); if (p) { p.bubble = m.text; p.bubbleUntil = performance.now() + 5500; } addChat(m.name, m.text, m.id === G.id); if (m.id !== G.id) S.chat(); return; }
       case 'emote': { const p = G.players.get(m.id); if (p) { p.emote = m.e; p.emoteAt = performance.now(); } return; }
-      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해서 감옥에 갇혔어요!`); } return; }
+      case 'jail': {
+        const p = G.players.get(m.id);
+        if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; p.act = -1; }
+        if (p && m.id !== G.id) sysChat(m.until ? `${p.name} 님이 파산해서 감옥에 갇혔어요!` : m.why === 'lucky' ? `${p.name} 님이 벼를 베다가 창살 틈으로 탈출했어요!` : m.why === 'sold' ? `${p.name} 님이 쌀을 팔고 감옥에서 나왔어요.` : `${p.name} 님이 감옥에서 풀려났어요.`);
+        return;
+      }
+      case 'freed':
+        S.free(); G.holdUse = false;
+        toast(m.why === 'lucky' ? `대박! 벼를 베다가 창살 틈으로 탈출했어요! 재기 지원금 +${CFG.BAILOUT}` : m.why === 'sold' ? `쌀을 팔고 풀려났어요! 재기 지원금 +${CFG.BAILOUT}` : `시간이 다 돼서 풀려났어요. 재기 지원금 +${CFG.BAILOUT}`, 'big');
+        if (m.why === 'lucky') { const p = G.players.get(G.id); if (p) for (let i = 0; i < 24; i++) burst(p.x, p.y - 12, 'conf'); }
+        return;
+      case 'rice': { const r = G.rice[m.id]; if (r) { r.at = m.at; r.cutAt = performance.now(); if (m.by !== G.id) straw(r.x, r.y); } return; }
       case 'toast': toast(m.text, m.kind); sysChat(m.text); return;
       case 'board': G.board = m.board; renderBoard(); return;
       case 'fix': { const p = G.players.get(G.id); if (p) { p.x = m.x; p.y = m.y; } return; }
@@ -222,6 +259,7 @@
     for (const p of m.players) addPlayer(p);
     addPlayer({ id: m.id, name: m.me.name, g: m.me.gender, seed: m.me.seed, eq: m.me.eq, x: m.x, y: m.y, d: 0, jail: m.me.jail });
     for (const [id, hp] of m.rocks) G.rocks[id].hp = hp;
+    if (m.rice) m.rice.forEach((at, i) => { G.rice[i].at = at; });
     G.race = null; setRace(m.race);
     G.myBets = m.bets || [];
     overlay(null);
@@ -231,15 +269,18 @@
   function addPlayer(p) {
     G.players.set(p.id, { id: p.id, name: p.name, g: p.g, seed: p.seed, eq: p.eq || {}, x: p.x, y: p.y, d: p.d || 0, walk: 0, mv: false, run: false, buf: [], jail: p.jail || 0, act: -1, petX: p.x - 10, petY: p.y, petR: true, trailAcc: 0, dustAcc: 0, speed: 0 });
   }
-  function pushSnap(p, t, x, y, d, mv, run) {
+  // 서버는 10Hz로, 움직인 사람만 보낸다. 간격이 벌어졌다면 그동안 멈춰 있었던 것이므로 직전 위치에 '정지' 지점을 끼워
+  // 다시 걷기 시작할 때 이전 정지 위치에서 미끄러지듯 출발하지 않게 한다. 멀리서 시야에 새로 들어온 사람은 순간이동.
+  function pushSnap(p, t, x, y, d, run) {
     const b = p.buf, last = b[b.length - 1];
-    if (last && t - last.t > 250) b.push({ t: t - 60, x: last.x, y: last.y, d: last.d, mv: 0, run: 0 });
-    b.push({ t, x, y, d, mv, run });
+    if (last && Math.hypot(x - last.x, y - last.y) > 60) b.length = 0;
+    else if (last && t - last.t > 160) b.push({ t: t - 100, x: last.x, y: last.y, d: last.d, run: 0 });
+    b.push({ t, x, y, d, run });
     if (b.length > 24) b.splice(0, b.length - 24);
   }
-  // 원격 플레이어: 120ms 과거 시점을 스냅샷 사이 보간 (Source 엔진 방식)
+  // 원격 플레이어: 200ms 과거 시점(10Hz 스냅샷 2개분)을 스냅샷 사이 보간 (Source 엔진 방식)
   function interp(p, dt) {
-    const rt = now() - 120, b = p.buf;
+    const rt = now() - 200, b = p.buf;
     if (!b.length) return;
     let i = b.length - 1;
     while (i > 0 && b[i - 1].t > rt) i--;

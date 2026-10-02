@@ -1,8 +1,8 @@
-// 안경원숭이 더비 클라이언트 (빌드 시 client/*.js 를 public/game.js 로 합침)
+// 화성간건호 클라이언트 (빌드 시 client/*.js 를 public/game.js 로 합침)
 (function () {
   'use strict';
   const W = window.WORLD, RACE = window.RACE, A = window.ART, AU = window.AUDIO, S = AU.SFX;
-  const { CFG, TRACK, ZONES, NPCS, ROCKS, ITEM, ITEMS, SLOTS, STABLE, STYLE_KO, COND, EMOTES } = W;
+  const { CFG, TRACK, ZONES, NPCS, ROCKS, RICE, ITEM, ITEMS, SLOTS, STABLE, STYLE_KO, COND, EMOTES } = W;
   const $ = (id) => document.getElementById(id);
   // DOM 헬퍼: 사용자 문자열은 항상 텍스트 노드로만 넣는다 (XSS 차단)
   function h(tag, attrs, ...kids) {
@@ -20,6 +20,7 @@
   const G = {
     mode: 'title', id: 0, me: null, players: new Map(), race: null, practice: null, prevRace: null, prevUntil: 0,
     rocks: ROCKS.map((r) => ({ ...r, hp: CFG.ROCK_HP, hitAt: 0, deadAt: 0, bornAt: 0 })),
+    rice: RICE.map((r) => ({ ...r, at: 0, cutAt: 0 })), // at: 다시 익는 서버 시각
     board: [], myBets: [], offset: 0, rtt: 0, connected: false, wantConn: false, token: localStorage.getItem('td-token'),
     keys: new Set(), cam: { mode: 'race', x: 0, y: 0, fade: 0, fadeDir: 0, target: null, shake: 0 }, watch: true,
     parts: [], pops: [], t: 0, interact: null, lastNet: 0, betType: 'win', pick: [], amount: +(localStorage.getItem('td-amt') || 100), holdUse: false, coinShow: 0
@@ -35,7 +36,10 @@
     dpr = window.devicePixelRatio || 1;
     view.width = Math.round(innerWidth * dpr); view.height = Math.round(innerHeight * dpr);
     const race = G.cam.mode === 'race';
-    gp = race ? Math.max(1, Math.min(Math.floor(view.width / RACE_AREA.w), Math.floor(view.height / RACE_AREA.h)))
+    // 경주 화면: 정수 배율이 2 이상이면 정수, 그보다 작은 화면에서는 소수 배율로 트랙 전체를 꽉 채움(정지 카메라라 픽셀 흔들림 없음).
+    // 맵(1024x768)보다 넓게 보이지 않도록 하한을 둔다 → 화면 가장자리에 빈 띠가 생기지 않음.
+    const fit = Math.min(view.width / RACE_AREA.w, view.height / RACE_AREA.h), floor = Math.max(view.width / W.W, view.height / W.H);
+    gp = race ? Math.max(floor, fit >= 2 ? Math.floor(fit) : Math.floor(fit * 10) / 10)
       : Math.max(2, Math.round(view.height / 200));
     VW = Math.ceil(view.width / gp) + 1; VH = Math.ceil(view.height / gp) + 1;
     buf.width = VW; buf.height = VH; bx.imageSmoothingEnabled = false; vx.imageSmoothingEnabled = false;
@@ -47,7 +51,7 @@
   const cache = new Map();
   const cached = (key, make) => { let c = cache.get(key); if (!c) { if (cache.size > 8000) cache.clear(); c = make(); cache.set(key, c); } return c; };
   const PROPS = {};
-  for (const k of ['dome', 'rocket', 'shop', 'cage', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
+  for (const k of ['dome', 'rocket', 'shop', 'barsBack', 'barsFront', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
   function standsSprite(w) {
     const [c, g] = A.mk(w, 30);
     for (let r = 0; r < 4; r++) { A.R(g, 0, r * 6, w, 6, r % 2 ? '#7a8098' : '#8a90a8'); A.R(g, 0, r * 6, w, 1, '#b0b6c8'); }
@@ -88,6 +92,23 @@
     if (flip) { g.setTransform(1, 0, 0, 1, 0, 0); A.text(g, num, 32 - 16 - 3, 19, '#1c140f'); }
     return A.outline(c);
   });
+  // 감옥에 갇힌 사람: 셔츠 색 유니폼을 입은 안경원숭이 + 손에 든 작은 낫. 40x34, 발 기준 (20,30).
+  // act 0~11 = 낫질 진행(위로 들었다가 앞으로 내리침), -1 = 낫을 등에 멘 상태
+  const jailSprite = (color, pose, blink, flip, act) => cached(`j${color}|${pose}|${blink}|${flip}|${act}`, () => {
+    const [c, g] = A.mk(40, 34);
+    if (flip) { g.translate(40, 0); g.scale(-1, 1); }
+    A.tarsier(g, 20, 30, color, '', pose, blink);
+    const t = act >= 0 ? act / 11 : -1;
+    // 낫 손잡이 각도: 대기 -60°(어깨 위), 들기 -130°, 내리침 +40°
+    const deg = t < 0 ? -60 : t < 0.45 ? -60 - (t / 0.45) * 70 : t < 0.6 ? -130 + ((t - 0.45) / 0.15) * 170 : 40 - ((t - 0.6) / 0.4) * 100;
+    const a = (deg * Math.PI) / 180, hx = 25, hy = 20, vx = Math.cos(a), vy = Math.sin(a);
+    for (let i = 0; i <= 6; i++) A.R(g, Math.round(hx + vx * i), Math.round(hy + vy * i), 1, 1, '#8a5a32');
+    const ex = hx + vx * 6, ey = hy + vy * 6;
+    for (let i = 0; i <= 6; i++) { const b = (i / 6) * Math.PI * 0.85; A.R(g, Math.round(ex + vx * Math.sin(b) * 3 - vy * (1 - Math.cos(b)) * 4), Math.round(ey + vy * Math.sin(b) * 3 + vx * (1 - Math.cos(b)) * 4), 1, 1, i > 3 ? '#ffffff' : '#c8ccd8'); }
+    A.R(g, hx - 1, hy - 1, 2, 2, '#c08850');
+    return A.outline(c);
+  });
+  const riceSprite = (stage, sway) => cached(`rice${stage}|${sway}`, () => A.rice(stage, sway));
   const portrait = (color, num, happy) => cached(`f${color}|${num}|${happy}`, () => { const [c, g] = A.mk(28, 30); A.tarsierFront(g, 14, 28, color, num, happy); return A.outline(c); });
   const petSprite = (id, f, right) => cached(`q${id}|${f}|${right}`, () => { const [c, g] = A.mk(24, 24); A.pet(g, 12, 22, id, f * 0.0982, right); return A.outline(c); });
   const npcSprite = (id, f) => cached(`n${id}|${f}`, () => { const [c, g] = A.mk(28, 36); A.npc(g, 14, 34, id, f / 4); return A.outline(c); });
@@ -106,14 +127,19 @@
     const img = gg.createImageData(W.W, W.H), d = img.data;
     const REG = [[150, 62, 38], [170, 76, 46], [186, 90, 54], [200, 108, 66]];
     const segs = []; for (const p of PATHS) for (let i = 0; i < p.length - 1; i++) segs.push([...p[i], ...p[i + 1]]);
-    const ci = ZONES.cageIn;
+    const pz = ZONES.jail;
     for (let y = 0; y < W.H; y++) for (let x = 0; x < W.W; x++) {
       const i = (y * W.W + x) * 4, sd = W.stadiumDist(x, y);
       const n = fbm(x & ~1, y & ~1);
       let c = REG[n < 0.38 ? 0 : n < 0.5 ? 1 : n < 0.63 ? 2 : 3];
       let pd = 99; if (y > 250 || x < 260 || x > 700) for (const s of segs) pd = Math.min(pd, segDist(x, y, s[0], s[1], s[2], s[3]));
       if (pd < 9 + vnoise(x / 5, y / 5) * 3) c = pd < 7 ? [214, 132, 86] : [204, 120, 76];
-      if (x >= ci.x - 4 && x < ci.x + ci.w + 4 && y >= ci.y - 4 && y < ci.y + ci.h + 8) c = ((x >> 3) + (y >> 3)) & 1 ? [92, 84, 80] : [84, 76, 72];
+      if (x >= pz.x && x < pz.x + pz.w && y >= pz.y + 4 && y < pz.y + pz.h + 4) {
+        // 물 댄 논: 진흙 바닥 위 얕은 물 + 잔물결, 벼 포기 자리는 젖은 흙
+        const wv = vnoise(x / 9, y / 4), dry = RICE.some((r) => Math.abs(x - r.x) < 7 && y > r.y - 3 && y < r.y + 3);
+        c = dry ? [92, 64, 40] : wv > 0.62 ? [118, 150, 150] : wv > 0.4 ? [92, 124, 120] : [80, 106, 98];
+        if (!dry && (y + Math.floor(vnoise(x / 14, y / 30) * 6)) % 7 === 0 && wv > 0.45) c = [150, 182, 176];
+      }
       if (sd < TRACK.inner - 1) {
         c = Math.floor((x + y) / 12) & 1 ? [92, 168, 72] : [84, 156, 66];
         if (sd > TRACK.inner - 4) c = [64, 128, 52];
@@ -143,8 +169,6 @@
       if (W.stadiumDist(x, y) < TRACK.outer + 4) continue;
       A.R(gg, x, y, 1 + (k % 3 === 0), 1, k % 2 ? '#7a3420' : '#e8a070');
     }
-    const big = (s, x, y, col) => { const [c, g] = A.mk(A.textW(s) + 1, 6); A.text(g, s, 0, 0, col); gg.drawImage(c, x, y, c.width * 2, c.height * 2); };
-    big('MARS', 352, 294, '#a8d890'); big('DERBY', 572, 294, '#a8d890');
   }
 
   // ---------- 정적 소품 배치 ----------
@@ -154,7 +178,10 @@
   prop('dish', 268, 70); prop('solar', 664, 150); prop('solar', 300, 150); prop('dish', 940, 360);
   prop('shop', 144, 366); prop('awning', 272, 441); prop('counter', 272, 470);
   prop('standL', 395, 474); prop('standR', 565, 474);
-  prop('cage', 856, 492, 491); prop('jumbo', 480, 340); prop('finish', 480, 349);
+  // 감옥 쇠창살: 뒤쪽(위·좌우 변)은 안의 사람보다 뒤, 앞쪽(아래 변)은 맨 앞
+  STATIC.push({ k: 'barsBack', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + 8 });
+  STATIC.push({ k: 'barsFront', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + ZONES.jail.h + 6 });
+  prop('jumbo', 480, 340); prop('finish', 480, 349);
   for (const [x, y] of [[214, 196], [746, 196], [214, 404], [746, 404]]) prop('flag', x, y);
   const ROCK_SPR = ['rock0', 'ore0', 'rock2', 'ore1', 'rock0', 'ore2', 'rock2'];
   const CROWD = [];
@@ -182,7 +209,7 @@
   function onMsg(m) {
     switch (m.t) {
       case 'welcome': return onWelcome(m);
-      case 'snap': for (const [id, x, y, d, mv, run] of m.p) { const p = G.players.get(id); if (p && id !== G.id) pushSnap(p, m.now, x, y, d, mv, run); } return;
+      case 'snap': for (const [id, x, y, d, run] of m.p) { const p = G.players.get(id); if (p && id !== G.id) pushSnap(p, m.now, x, y, d, run); } return;
       case 'join': addPlayer(m.p); sysChat(`${m.p.name} 님이 들어왔어요.`); return;
       case 'leave': { const p = G.players.get(m.id); if (p) { G.players.delete(m.id); sysChat(`${p.name} 님이 나갔어요.`); } return; }
       case 'eq': { const p = G.players.get(m.id); if (p) p.eq = m.eq; return; }
@@ -198,14 +225,24 @@
         if (p) { p.jail = m.me.jail; p.eq = m.me.eq; if (m.x != null) { p.x = m.x; p.y = m.y; } }
         if (bought) { S.buy(); toast('구매 완료! 바로 장착했어요.', 'big'); }
         if (!was && m.me.jail) onJailed();
-        if (was && !m.me.jail) { S.free(); toast(`풀려났어요! 재기 지원금 ${CFG.BAILOUT} 코인을 받았어요.`, 'big'); }
         if (shopOpen()) renderShop();
         return;
       }
       case 'rock': return onRock(m);
       case 'chat': { const p = G.players.get(m.id); if (p) { p.bubble = m.text; p.bubbleUntil = performance.now() + 5500; } addChat(m.name, m.text, m.id === G.id); if (m.id !== G.id) S.chat(); return; }
       case 'emote': { const p = G.players.get(m.id); if (p) { p.emote = m.e; p.emoteAt = performance.now(); } return; }
-      case 'jail': { const p = G.players.get(m.id); if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; if (m.until && m.id !== G.id) sysChat(`${p.name} 님이 파산해서 감옥에 갇혔어요!`); } return; }
+      case 'jail': {
+        const p = G.players.get(m.id);
+        if (p) { p.jail = m.until; p.x = m.x; p.y = m.y; p.buf = []; p.act = -1; }
+        if (p && m.id !== G.id) sysChat(m.until ? `${p.name} 님이 파산해서 감옥에 갇혔어요!` : m.why === 'lucky' ? `${p.name} 님이 벼를 베다가 창살 틈으로 탈출했어요!` : m.why === 'sold' ? `${p.name} 님이 쌀을 팔고 감옥에서 나왔어요.` : `${p.name} 님이 감옥에서 풀려났어요.`);
+        return;
+      }
+      case 'freed':
+        S.free(); G.holdUse = false;
+        toast(m.why === 'lucky' ? `대박! 벼를 베다가 창살 틈으로 탈출했어요! 재기 지원금 +${CFG.BAILOUT}` : m.why === 'sold' ? `쌀을 팔고 풀려났어요! 재기 지원금 +${CFG.BAILOUT}` : `시간이 다 돼서 풀려났어요. 재기 지원금 +${CFG.BAILOUT}`, 'big');
+        if (m.why === 'lucky') { const p = G.players.get(G.id); if (p) for (let i = 0; i < 24; i++) burst(p.x, p.y - 12, 'conf'); }
+        return;
+      case 'rice': { const r = G.rice[m.id]; if (r) { r.at = m.at; r.cutAt = performance.now(); if (m.by !== G.id) straw(r.x, r.y); } return; }
       case 'toast': toast(m.text, m.kind); sysChat(m.text); return;
       case 'board': G.board = m.board; renderBoard(); return;
       case 'fix': { const p = G.players.get(G.id); if (p) { p.x = m.x; p.y = m.y; } return; }
@@ -222,6 +259,7 @@
     for (const p of m.players) addPlayer(p);
     addPlayer({ id: m.id, name: m.me.name, g: m.me.gender, seed: m.me.seed, eq: m.me.eq, x: m.x, y: m.y, d: 0, jail: m.me.jail });
     for (const [id, hp] of m.rocks) G.rocks[id].hp = hp;
+    if (m.rice) m.rice.forEach((at, i) => { G.rice[i].at = at; });
     G.race = null; setRace(m.race);
     G.myBets = m.bets || [];
     overlay(null);
@@ -231,15 +269,18 @@
   function addPlayer(p) {
     G.players.set(p.id, { id: p.id, name: p.name, g: p.g, seed: p.seed, eq: p.eq || {}, x: p.x, y: p.y, d: p.d || 0, walk: 0, mv: false, run: false, buf: [], jail: p.jail || 0, act: -1, petX: p.x - 10, petY: p.y, petR: true, trailAcc: 0, dustAcc: 0, speed: 0 });
   }
-  function pushSnap(p, t, x, y, d, mv, run) {
+  // 서버는 10Hz로, 움직인 사람만 보낸다. 간격이 벌어졌다면 그동안 멈춰 있었던 것이므로 직전 위치에 '정지' 지점을 끼워
+  // 다시 걷기 시작할 때 이전 정지 위치에서 미끄러지듯 출발하지 않게 한다. 멀리서 시야에 새로 들어온 사람은 순간이동.
+  function pushSnap(p, t, x, y, d, run) {
     const b = p.buf, last = b[b.length - 1];
-    if (last && t - last.t > 250) b.push({ t: t - 60, x: last.x, y: last.y, d: last.d, mv: 0, run: 0 });
-    b.push({ t, x, y, d, mv, run });
+    if (last && Math.hypot(x - last.x, y - last.y) > 60) b.length = 0;
+    else if (last && t - last.t > 160) b.push({ t: t - 100, x: last.x, y: last.y, d: last.d, run: 0 });
+    b.push({ t, x, y, d, run });
     if (b.length > 24) b.splice(0, b.length - 24);
   }
-  // 원격 플레이어: 120ms 과거 시점을 스냅샷 사이 보간 (Source 엔진 방식)
+  // 원격 플레이어: 200ms 과거 시점(10Hz 스냅샷 2개분)을 스냅샷 사이 보간 (Source 엔진 방식)
   function interp(p, dt) {
-    const rt = now() - 120, b = p.buf;
+    const rt = now() - 200, b = p.buf;
     if (!b.length) return;
     let i = b.length - 1;
     while (i > 0 && b[i - 1].t > rt) i--;
@@ -375,9 +416,15 @@
   function findTarget(p) {
     if (!p) return null;
     let best = null, bd = 1e9;
+    // 감옥 안: 농부 간수와 익은 벼만 상호작용 (다른 NPC·바위는 창살 밖)
+    if (p.jail > now()) {
+      const f = NPCS.find((n) => n.id === 'farmer'), fd = Math.hypot(f.x - p.x, f.y - p.y);
+      if (fd < 34) { bd = fd; best = { kind: 'npc', ref: f }; }
+      for (const r of G.rice) { const d = Math.hypot(r.x - p.x, r.y - p.y); if (r.at <= now() && d < 22 && d < bd) { bd = d; best = { kind: 'rice', ref: r }; } }
+      return best;
+    }
     for (const n of NPCS) { const d = Math.hypot(n.x - p.x, n.y + 4 - p.y); if (d < 36 && d < bd) { bd = d; best = { kind: 'npc', ref: n }; } }
     if (best) return best;
-    if (p.jail > now()) return null;
     for (const r of G.rocks) { const d = Math.hypot(r.x - p.x, r.y - p.y); if (r.hp > 0 && d < 26 && d < bd) { bd = d; best = { kind: 'rock', ref: r }; } }
     return best;
   }
@@ -386,14 +433,19 @@
     if (!p || p.act >= 0) return;
     const tgt = findTarget(p);
     if (tgt && tgt.kind === 'npc') { G.holdUse = false; return interact(tgt.ref); }
-    if (p.jail > now()) return;
-    if (tgt) { p.d = dirOf(tgt.ref.x - p.x, tgt.ref.y - p.y); p.target = tgt.ref; } else p.target = null;
+    if (p.jail > now() && !tgt) return;
+    if (tgt) { p.d = dirOf(tgt.ref.x - p.x, tgt.ref.y - p.y); p.target = tgt.ref; p.tkind = tgt.kind; } else p.target = null;
     p.act = 0; p.hit = false; S.whoosh();
   }
   function interact(n) {
     if (n.act === 'bet') openBet();
     else if (n.act === 'shop') openShop();
-    else toast(['R-2: 파산하면 30초 동안 여기서 반성하는 거다.', 'R-2: 감옥 안에서도 채팅은 할 수 있지.', `R-2: 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 주지. 이번엔 신중하게 걸라고!`][Math.floor(Math.random() * 3)]);
+    else if (n.act === 'rice') {
+      const rice = G.me ? G.me.rice || 0 : 0;
+      if (!(G.me && G.me.jail > now())) toast(`벼리: 파산하면 감옥에서 벼를 베게 될 거예요. 쌀 ${CFG.RICE_NEED}개를 가져오면 내보내 드려요.`);
+      else if (rice < CFG.RICE_NEED) toast(`벼리: 쌀이 ${CFG.RICE_NEED - rice}개 더 필요해요. 익은 벼를 E 키로 베어 주세요!`);
+      else send({ t: 'sell' });
+    }
   }
   const dirOf = (dx, dy) => ((Math.round((Math.atan2(dy, dx) * 180 / Math.PI - 90) / 45) % 8) + 8) % 8;
   function emote(e) { if (!e) return; send({ t: 'emote', e }); S.pop(); }
@@ -410,7 +462,8 @@
       if (prev < A.IMPACT_T && p.act >= A.IMPACT_T && !p.hit) {
         p.hit = true;
         const r = p.target;
-        if (r && r.hp > 0 && dist(p, r) < 30) { send({ t: 'mine', rock: r.id }); r.hitAt = performance.now(); chips(r.x, r.y - 6, 5, '#a0523a'); S.mine(); G.cam.shake = 0.1; }
+        if (r && p.tkind === 'rice') { if (r.at <= now() && dist(p, r) < 26) { send({ t: 'rice', id: r.id }); r.at = now() + CFG.RICE_REGROW_MS; r.cutAt = performance.now(); straw(r.x, r.y); S.mine(); } }
+        else if (r && r.hp > 0 && dist(p, r) < 30) { send({ t: 'mine', rock: r.id }); r.hitAt = performance.now(); chips(r.x, r.y - 6, 5, '#a0523a'); S.mine(); G.cam.shake = 0.1; }
       }
       if (p.act >= 1) { p.act = -1; if (G.holdUse || G.keys.has('KeyE') || G.keys.has('Space')) use(); }
     }
@@ -425,7 +478,7 @@
       const n = Math.hypot(dx, dy); dx /= n; dy /= n; // 대각선 속도 정규화
       const ride = p.eq.ride && ITEM[p.eq.ride] ? ITEM[p.eq.ride].speed : 1;
       const v = CFG.WALK * ride * (run ? CFG.RUN_MULT : 1) * (p.act >= 0 ? 0.35 : 1) * dt, ox = p.x, oy = p.y;
-      if (jailed) [p.x, p.y] = W.clampCage(p.x + dx * v, p.y + dy * v);
+      if (jailed) [p.x, p.y] = W.clampJail(p.x + dx * v, p.y + dy * v);
       else { if (!W.blocked(p.x + dx * v, p.y)) p.x += dx * v; if (!W.blocked(p.x, p.y + dy * v)) p.y += dy * v; }
       if (p.act < 0) p.d = dirOf(dx, dy);
       const moved = Math.hypot(p.x - ox, p.y - oy);
@@ -449,7 +502,7 @@
       const d = (p.speed || 0) * dt;
       if (d > 0.02) {
         if (p.run && !p.eq.ride && (p.dustAcc += d) > 9) { p.dustAcc = 0; part(p.x + (Math.random() - 0.5) * 4, p.y - 1, 'dust'); }
-        if (p.eq.trail && (p.trailAcc += d) > 5) { p.trailAcc = 0; part(p.x + (Math.random() - 0.5) * 6, p.y - 4 - Math.random() * 6, p.eq.trail); }
+        if (p.eq.trail && !(p.jail > now()) && (p.trailAcc += d) > 5) { p.trailAcc = 0; part(p.x + (Math.random() - 0.5) * 6, p.y - 4 - Math.random() * 6, p.eq.trail); }
       }
     }
   }
@@ -466,6 +519,9 @@
   }
   function chips(x, y, n, col) { for (let i = 0; i < n; i++) part(x, y, 'chip', { vx: (Math.random() - 0.5) * 70, vy: -40 - Math.random() * 50, life: 0.55, col }); }
   function confetti() { for (let i = 0; i < 120; i++) part(TRACK.cx + (Math.random() - 0.5) * 360, RACE_AREA.y + 40 + Math.random() * 40, 'conf', { vx: (Math.random() - 0.5) * 40, vy: -60 - Math.random() * 60, life: 2.4, col: ['#ff5a5a', '#ffd040', '#6ad06a', '#3b78d8', '#e05d9a', '#fff'][i % 6] }); }
+  // 벼 벤 자리: 볏짚 조각 + 금빛 낟알
+  function straw(x, y) { for (let i = 0; i < 7; i++) part(x + (Math.random() - 0.5) * 8, y - 6, 'chip', { vx: (Math.random() - 0.5) * 60, vy: -30 - Math.random() * 40, life: 0.6, col: i % 3 ? '#d8b850' : '#8aa83a' }); }
+  function burst(x, y) { part(x, y, 'conf', { vx: (Math.random() - 0.5) * 120, vy: -80 - Math.random() * 60, life: 1.4, col: ['#ff5a5a', '#ffd040', '#6ad06a', '#3b78d8', '#fff'][Math.floor(Math.random() * 5)] }); }
   function coinFountain(n) { const p = G.players.get(G.id); if (!p) return; for (let i = 0; i < n; i++) setTimeout(() => part(p.x, p.y - 20, 'coin', { vx: (Math.random() - 0.5) * 70, vy: -90 - Math.random() * 50, life: 1.3 }), i * 25); }
   function updateParts(dt) {
     for (const q of G.parts) {
@@ -510,11 +566,14 @@
   }
   function onJailed() {
     S.jail(); setCam('follow');
-    toast(`파산했어요! ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 동안 감옥에 갇혀요. 채팅은 할 수 있어요.`, 'bad');
+    const p = G.players.get(G.id); if (p) p.act = -1;
+    toast(`파산해서 감옥에 갇혔어요! 익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 간수 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출!`, 'bad');
     if (betOpen()) closeBet();
   }
 
-  // ---------- 카메라 (정수 픽셀 고정 → 떨림 없음) ----------
+  // ---------- 카메라 ----------
+  // 따라가기: 실수 좌표로 정확히 추적. 그리기는 정수 픽셀 버퍼에 하고, 소수 부분은 화면에 옮길 때 기기 픽셀 단위로 밀어
+  // 세상이 1px 계단 없이 부드럽게 흐르고 내 캐릭터는 화면 한가운데에 고정된다.
   function setCam(mode) { if (G.cam.mode === mode && !G.cam.target) return; if (G.cam.target === mode) return; G.cam.target = mode; G.cam.fadeDir = 1; }
   function updateCam(dt) {
     const c = G.cam;
@@ -523,27 +582,109 @@
       if (c.fade >= 1 && c.fadeDir > 0) { c.mode = c.target; c.fadeDir = -1; resize(); }
       if (c.fade <= 0 && c.fadeDir < 0) c.target = null;
     }
-    if (c.mode === 'race') { c.x = Math.round(RACE_AREA.x + RACE_AREA.w / 2 - VW / 2); c.y = Math.round(RACE_AREA.y + RACE_AREA.h / 2 - VH / 2); }
+    if (c.mode === 'race') {
+      c.x = clamp(Math.round(RACE_AREA.x + RACE_AREA.w / 2 - VW / 2), 0, Math.max(0, W.W - VW));
+      c.y = clamp(Math.round(RACE_AREA.y + RACE_AREA.h / 2 - VH / 2), 0, Math.max(0, W.H - VH));
+    }
     else {
       const p = G.players.get(G.id);
-      if (p) { c.x = Math.round(p.x) - (VW >> 1); c.y = Math.round(p.y) - 12 - (VH >> 1); }
-      c.x = VW >= W.W ? Math.round((W.W - VW) / 2) : clamp(c.x, 0, W.W - VW);
-      c.y = VH >= W.H ? Math.round((W.H - VH) / 2) : clamp(c.y, 0, W.H - VH);
+      if (p) { c.x = p.x - (VW - 1) / 2; c.y = p.y - 12 - (VH - 1) / 2; }
+      c.x = VW - 1 >= W.W ? (W.W - VW + 1) / 2 : clamp(c.x, 0, W.W - VW + 1);
+      c.y = VH - 1 >= W.H ? (W.H - VH + 1) / 2 : clamp(c.y, 0, W.H - VH + 1);
     }
     if (c.shake > 0) c.shake -= dt;
   }
 
+  // ---------- 모바일 터치: 가상 조이스틱 + 액션 버튼 ----------
+  // 터치 기기(coarse pointer)에서만 표시. 조이스틱은 왼쪽 절반, 액션 버튼은 오른쪽 하단.
+  const TOUCH = 'ontouchstart' in window || matchMedia('(pointer:coarse)').matches;
+  if (TOUCH) {
+    $('touch').classList.remove('hidden');
+    const jz = $('joy-zone'), jc = $('joy'), jx = jc.getContext('2d');
+    jc.width = 140; jc.height = 140; jx.imageSmoothingEnabled = false;
+    let joyId = null, baseX = 0, baseY = 0;
+    const drawJoy = (dx, dy) => {
+      jx.clearRect(0, 0, 140, 140);
+      // 바깥 링
+      jx.beginPath(); jx.arc(70, 70, 54, 0, Math.PI * 2);
+      jx.lineWidth = 3; jx.strokeStyle = 'rgba(255,248,236,.25)'; jx.stroke();
+      jx.fillStyle = 'rgba(26,16,12,.18)'; jx.fill();
+      // 안쪽 손잡이: 놓으면 가운데, 밀면 이동
+      const r = Math.min(36, Math.hypot(dx, dy)), a = Math.atan2(dy, dx);
+      const tx = 70 + Math.cos(a) * r, ty = 70 + Math.sin(a) * r;
+      jx.beginPath(); jx.arc(tx, ty, 20, 0, Math.PI * 2);
+      jx.fillStyle = 'rgba(232,116,58,.55)'; jx.fill();
+      jx.lineWidth = 2; jx.strokeStyle = 'rgba(255,255,255,.35)'; jx.stroke();
+    };
+    drawJoy(0, 0);
+    jz.addEventListener('touchstart', (e) => {
+      e.preventDefault(); AU.init();
+      const t = e.changedTouches[0]; joyId = t.identifier;
+      baseX = t.clientX; baseY = t.clientY;
+      // 조이스틱 캔버스를 터치 위치 근처에 이동
+      jc.style.left = baseX + 'px'; jc.style.bottom = ''; jc.style.top = (baseY - 70) + 'px';
+      jc.style.transform = 'none'; jc.classList.add('on');
+      drawJoy(0, 0);
+    }, { passive: false });
+    const joyMove = (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier !== joyId) continue;
+        const dx = t.clientX - baseX, dy = t.clientY - baseY;
+        drawJoy(dx, dy);
+        // 터치 이동량 → 키 시뮬레이션(임계값 12px)
+        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
+        if (Math.hypot(dx, dy) > 12) {
+          // 8방향 매핑: 22.5° 구간마다 키 조합
+          if (dx < -10) G.keys.add('ArrowLeft');
+          if (dx > 10) G.keys.add('ArrowRight');
+          if (dy < -10) G.keys.add('ArrowUp');
+          if (dy > 10) G.keys.add('ArrowDown');
+          if (Math.hypot(dx, dy) > 50) G.keys.add('ShiftLeft');
+        }
+      }
+    };
+    jz.addEventListener('touchmove', (e) => { e.preventDefault(); joyMove(e); }, { passive: false });
+    const joyEnd = (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier !== joyId) continue;
+        joyId = null; jc.classList.remove('on');
+        G.keys.delete('ArrowLeft'); G.keys.delete('ArrowRight'); G.keys.delete('ArrowUp'); G.keys.delete('ArrowDown'); G.keys.delete('ShiftLeft');
+      }
+    };
+    jz.addEventListener('touchend', joyEnd); jz.addEventListener('touchcancel', joyEnd);
+
+    // 액션 버튼: E 키 역할 (누르면 상호작용 / 채굴 / 벼 베기, 꾹 누르면 반복)
+    const ab = $('act-btn');
+    let actInterval = null;
+    ab.addEventListener('touchstart', (e) => { e.preventDefault(); AU.init(); G.keys.add('KeyE'); use(); actInterval = setInterval(() => { if (G.keys.has('KeyE')) use(); }, 600); }, { passive: false });
+    const actEnd = () => { G.keys.delete('KeyE'); clearInterval(actInterval); };
+    ab.addEventListener('touchend', actEnd); ab.addEventListener('touchcancel', actEnd);
+    // 프롬프트 텍스트 → 액션 버튼 라벨 동기화
+    const syncActBtn = () => { const it = G.interact; ab.textContent = !it ? 'E' : it.kind === 'rice' ? '🌾' : it.kind === 'rock' ? '⛏' : it.ref.act === 'bet' ? '💰' : it.ref.act === 'shop' ? '🛒' : it.ref.act === 'rice' ? '🌾' : 'E'; requestAnimationFrame(syncActBtn); };
+    syncActBtn();
+
+    // 채팅 토글
+    $('chat-toggle').addEventListener('click', () => { const el = $('chat-in'); if (el === document.activeElement) { sendChat(); } else { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } });
+
+    // 캔버스 터치 기본 동작 차단 (줌·스크롤 방지)
+    document.getElementById('view').addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  }
+
   // ---------- 렌더 ----------
   function render() {
+    // 카메라 실수 좌표 → 정수 부분으로 버퍼에 그리고, 소수 부분(fx, fy)은 화면에 옮길 때 밀어서 부드럽게 스크롤
     const c = G.cam, sh = c.shake > 0;
-    const ox = c.x + (sh ? Math.round((Math.random() - 0.5) * 3) : 0), oy = c.y + (sh ? Math.round((Math.random() - 0.5) * 3) : 0);
+    const cx = c.x + (sh ? (Math.random() - 0.5) * 3 : 0), cy = c.y + (sh ? (Math.random() - 0.5) * 3 : 0);
+    const ox = Math.floor(cx), oy = Math.floor(cy), fx = cx - ox, fy = cy - oy;
     bx.fillStyle = '#5a2414'; bx.fillRect(0, 0, VW, VH);
     bx.drawImage(ground, -ox, -oy);
     const list = [], tms = performance.now(), sec = tms / 1000;
     for (const s of STATIC) if (s.x - ox < VW && s.x + PROPS[s.k].width - ox > 0 && s.y - oy < VH && s.y + PROPS[s.k].height - oy > 0) list.push([s.sy, 0, s]);
     for (const r of G.rocks) if (Math.abs(r.x - ox - VW / 2) < VW / 2 + 20 && Math.abs(r.y - oy - VH / 2) < VH / 2 + 30) list.push([r.y, 1, r]);
     for (const n of NPCS) list.push([n.y, 2, n]);
-    for (const p of G.players.values()) if (Math.abs(p.x - ox - VW / 2) < VW / 2 + 30 && Math.abs(p.y - oy - VH / 2) < VH / 2 + 60) { list.push([p.y, 3, p]); if (p.eq.pet) list.push([p.petY, 4, p]); }
+    for (const p of G.players.values()) if (Math.abs(p.x - ox - VW / 2) < VW / 2 + 30 && Math.abs(p.y - oy - VH / 2) < VH / 2 + 60) { list.push([p.y, 3, p]); if (p.eq.pet && !(p.jail > now())) list.push([p.petY, 4, p]); }
+    const pz = ZONES.jail;
+    if (pz.x - ox < VW && pz.x + pz.w - ox > 0 && pz.y - oy < VH && pz.y + pz.h - oy > 0) for (const r of G.rice) list.push([r.y, 6, r]);
     const rv = runnersView();
     if (rv) for (const q of rv.list) list.push([q.y, 5, q]);
     list.sort((a, b) => a[0] - b[0]);
@@ -553,11 +694,12 @@
       else if (k === 2) bx.drawImage(npcSprite(o.id, Math.floor(sec * 4) % 8), Math.round(o.x - 15 - ox), Math.round(o.y - 35 - oy));
       else if (k === 3) drawPlayer(o, ox, oy, sec);
       else if (k === 4) bx.drawImage(petSprite(o.eq.pet, Math.floor(sec * 8) % 8, o.petR), Math.round(o.petX - 13 - ox), Math.round(o.petY - 23 - oy));
+      else if (k === 6) drawRice(o, ox, oy, tms);
       else drawRunner(o, ox, oy, rv, sec);
     }
     drawParts(ox, oy);
-    vx.drawImage(buf, 0, 0, VW * gp, VH * gp);
-    drawScreen(ox, oy, rv, tms);
+    vx.drawImage(buf, -fx * gp, -fy * gp, VW * gp, VH * gp);
+    drawScreen(cx, cy, rv, tms);
     commentary(rv);
   }
   function drawStatic(s, ox, oy, sec, rv) {
@@ -607,8 +749,28 @@
     if (r.hp < CFG.ROCK_HP) { A.R(bx, x - 2 + shake, y - spr.height + 6, 1, 3, '#3a1a10'); if (r.hp < 2) A.R(bx, x + 2 + shake, y - spr.height + 8, 3, 1, '#3a1a10'); }
     if (G.interact && G.interact.ref === r) { bx.globalAlpha = 0.5 + 0.3 * Math.sin(tms / 160); A.R(bx, x - 6, y + 2, 12, 1, '#fff6c0'); bx.globalAlpha = 1; }
   }
+  // 벼: 익은 정도에 따라 그루터기 → 새싹 → 푸른 벼 → 황금 이삭. 익은 벼는 바람에 살랑, 막 벤 벼는 잠깐 흔들림.
+  function drawRice(r, ox, oy, tms) {
+    const x = Math.round(r.x - ox), y = Math.round(r.y - oy), left = r.at - now();
+    const stage = left <= 0 ? 3 : left > CFG.RICE_REGROW_MS * 0.66 ? 0 : left > CFG.RICE_REGROW_MS * 0.33 ? 1 : 2;
+    const sway = stage === 3 ? Math.round(Math.sin(tms / 700 + r.x * 0.15)) : tms - r.cutAt < 250 ? (Math.floor(tms / 60) % 2 ? 1 : -1) : 0;
+    bx.drawImage(riceSprite(stage, sway), x - 8, y - 18);
+    if (G.interact && G.interact.ref === r) { bx.globalAlpha = 0.5 + 0.3 * Math.sin(tms / 160); A.R(bx, x - 6, y + 2, 12, 1, '#fff6c0'); bx.globalAlpha = 1; }
+  }
   function drawPlayer(p, ox, oy, sec) {
     const x = Math.round(p.x - ox), y = Math.round(p.y - oy), rd = p.eq.ride, R0 = rd && A.RIDE[rd];
+    if (p.jail > now()) {
+      // 감옥에서는 누구나 안경원숭이로 변신 (셔츠 색 유니폼). 걸을 땐 깡충, 서 있으면 앉은 자세.
+      if (p.d >= 5 && p.d <= 7) p.faceL = true; else if (p.d >= 1 && p.d <= 3) p.faceL = false;
+      const act = p.act >= 0 ? Math.min(11, Math.floor(p.act * 12)) : -1;
+      const pose = act >= 0 ? (act < 6 ? 1 : 3) : p.mv ? Math.floor(p.walk * 0.5) % 4 : 4;
+      const hop = p.mv && act < 0 ? [0, 2, 3, 1][Math.floor(p.walk * 0.5) % 4] : 0;
+      const blink = Math.floor(sec * 1.1 + p.id * 0.7) % 8 === 0;
+      bx.fillStyle = 'rgba(40,10,0,0.28)'; bx.fillRect(x - 5, y - 1, 10, 2);
+      bx.drawImage(jailSprite(lookOf(p).shirt, pose, blink, !!p.faceL, act), x - 21, y - 31 - hop);
+      p.lift = -7;
+      return;
+    }
     const frame = p.mv ? Math.floor(p.walk * 4) % 4 : 0, act = p.act >= 0 ? Math.min(11, Math.floor(p.act * 12)) : -1;
     let lift = 0;
     bx.fillStyle = 'rgba(40,10,0,0.28)'; bx.fillRect(x - 5, y - 1, 10, 2);
@@ -645,20 +807,20 @@
   }
   // 화면 좌표 위 텍스트 (이름표·말풍선·팝업·PIP) — 버퍼 해상도와 무관하게 선명
   function drawScreen(ox, oy, rv, tms) {
-    const fs = labelPx, sx = (wx) => Math.round((wx - ox) * gp), sy = (wy) => Math.round((wy - oy) * gp);
+    const fs = labelPx, sx = (wx) => Math.round((wx - ox) * gp), sy = (wy) => Math.round((wy - oy) * gp), bufX = Math.floor(ox), bufY = Math.floor(oy);
     vx.textAlign = 'center'; vx.textBaseline = 'bottom'; vx.lineJoin = 'round';
     if (G.mode === 'play') for (const p of G.players.values()) {
-      const X = sx(p.x), top = sy(p.y - 31 - (p.lift || 0) - (p.eq.hat === 'h_top' ? 6 : p.eq.hat ? 3 : 0));
+      const top = sy(p.y - 31 - (p.lift || 0) - (p.jail > now() ? 0 : p.eq.hat === 'h_top' ? 6 : p.eq.hat ? 3 : 0)), X = sx(p.x);
       if (X < -200 || X > view.width + 200 || top < -100 || top > view.height + 100) continue;
       const jailed = p.jail > now();
       vx.font = `bold ${fs}px Galmuri11, monospace`;
-      const label = jailed ? `${p.name} · 수감 ${Math.ceil((p.jail - now()) / 1000)}초` : p.name;
+      const label = jailed ? `${p.name} · 감옥 ${Math.ceil((p.jail - now()) / 1000)}초` : p.name;
       vx.lineWidth = Math.max(2, fs / 4); vx.strokeStyle = 'rgba(20,8,4,0.9)'; vx.strokeText(label, X, top);
       vx.fillStyle = jailed ? '#ff8a7a' : p.id === G.id ? '#ffd860' : '#ffffff'; vx.fillText(label, X, top);
       let by = top - fs - 4;
       if (p.bubble && tms < p.bubbleUntil) {
         vx.font = `${fs}px Galmuri11, monospace`;
-        const lines = wrap(p.bubble, 16).slice(0, 3), lh = fs + 2, w = Math.max(...lines.map((l) => vx.measureText(l).width)) + fs, hh = lines.length * lh + fs * 0.6;
+        const lines = wrap(p.bubble, fs * 11).slice(0, 3), lh = fs + 2, w = Math.max(...lines.map((l) => vx.measureText(l).width)) + fs, hh = lines.length * lh + fs * 0.6;
         const a = Math.min(1, (p.bubbleUntil - tms) / 400);
         vx.globalAlpha = a;
         const bx0 = Math.round(X - w / 2), by0 = Math.round(by - hh);
@@ -682,15 +844,16 @@
     const pr = $('prompt'), it = G.mode === 'play' && G.interact;
     if (it) {
       const o = it.ref, X = sx(o.x) / dpr, Y = sy(o.y - (it.kind === 'npc' ? 40 : 22)) / dpr;
-      pr.style.left = X + 'px'; pr.style.top = Y + 'px';
-      const txt = it.kind === 'npc' ? (o.act === 'bet' ? '베팅하기' : o.act === 'shop' ? '상점 둘러보기' : '말 걸기') : '캐기';
+      pr.style.transform = `translate(${Math.round(X)}px, ${Math.round(Y)}px) translate(-50%, -100%)`;
+      const sell = G.me && (G.me.rice || 0) >= CFG.RICE_NEED;
+      const txt = it.kind === 'rice' ? '벼 베기' : it.kind === 'npc' ? (o.act === 'bet' ? '베팅하기' : o.act === 'shop' ? '상점 둘러보기' : o.act === 'rice' ? (G.me && G.me.jail > now() ? (sell ? '쌀 팔고 나가기' : `쌀 ${G.me.rice || 0}/${CFG.RICE_NEED}`) : '말 걸기') : '말 걸기') : '캐기';
       if (pr._t !== txt) { pr.replaceChildren(h('b', null, 'E'), ' ' + txt); pr._t = txt; }
       pr.classList.remove('hidden');
     } else pr.classList.add('hidden');
     // 중계 PIP: 선두 근접 화면
     if (G.cam.mode === 'race' && rv && rv.started && G.mode === 'play' && view.width > 900) {
       const lead = rv.list.reduce((a, b) => (b.p < 1.001 && b.p > a.p ? b : a), rv.list[0]);
-      const sw = 92, shh = 52, sx0 = clamp(Math.round(lead.x - ox - sw / 2), 0, VW - sw), sy0 = clamp(Math.round(lead.y - oy - shh + 10), 0, VH - shh);
+      const sw = 92, shh = 52, sx0 = clamp(Math.round(lead.x - bufX - sw / 2), 0, VW - sw), sy0 = clamp(Math.round(lead.y - bufY - shh + 10), 0, VH - shh);
       const k = gp * 2, dw = sw * k, dh = shh * k, dx = view.width - dw - 16 * dpr, dy = view.height - dh - 70 * dpr;
       vx.fillStyle = '#120c0a'; vx.fillRect(dx - 4 * dpr, dy - 4 * dpr, dw + 8 * dpr, dh + 8 * dpr);
       vx.drawImage(buf, sx0, sy0, sw, shh, dx, dy, dw, dh);
@@ -702,7 +865,20 @@
     if (G.me && G.me.jail > now() && G.mode === 'play') { vx.fillStyle = 'rgba(120,0,0,0.12)'; vx.fillRect(0, 0, view.width, view.height); }
     if (G.cam.fade > 0) { vx.fillStyle = `rgba(10,5,4,${G.cam.fade})`; vx.fillRect(0, 0, view.width, view.height); }
   }
-  function wrap(s, n) { const out = []; let cur = ''; for (const ch of s) { cur += ch; if ([...cur].length >= n) { out.push(cur); cur = ''; } } if (cur) out.push(cur); return out; }
+  // 말풍선 줄바꿈: 실제 글자 폭(maxW px) 기준, 가능하면 띄어쓰기에서 끊고 긴 단어만 글자 단위로 자름
+  function wrap(s, maxW) {
+    const out = []; let cur = '';
+    const fits = (t) => vx.measureText(t).width <= maxW;
+    for (const word of s.split(' ')) {
+      const next = cur ? cur + ' ' + word : word;
+      if (fits(next)) { cur = next; continue; }
+      if (cur) out.push(cur);
+      cur = '';
+      for (const ch of word) { if (fits(cur + ch)) cur += ch; else { out.push(cur); cur = ch; } }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
 
   // ---------- 오버레이·토스트·티커·채팅 ----------
   function overlay(msg) {
@@ -713,7 +889,8 @@
   const TOAST_LIFE = 4500;
   function toast(text, kind) {
     const el = h('div', { class: 'toast' + (kind ? ' ' + kind : '') }, text);
-    $('toasts').appendChild(el); el.offsetHeight;
+    const box = $('toasts'); box.appendChild(el); el.offsetHeight;
+    while (box.children.length > 3) box.firstChild.remove(); // 한 번에 최대 3개만
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 420); }, TOAST_LIFE);
   }
   function ticker(text) {
@@ -740,7 +917,7 @@
     const showCoins = Math.round(G.coinShow + (G.me.coins - G.coinShow) * 0.18);
     G.coinShow = showCoins; $('coins').textContent = fmt(showCoins);
     const jailed = G.me.jail > now();
-    $('jail-t').textContent = jailed ? ` · 수감 ${Math.ceil((G.me.jail - now()) / 1000)}초` : '';
+    $('jail-t').textContent = jailed ? ` · 감옥 쌀 ${G.me.rice || 0}/${CFG.RICE_NEED} · ${Math.ceil((G.me.jail - now()) / 1000)}초` : '';
     $('me-box').classList.toggle('jailed', jailed);
     renderRaceBox();
   }
@@ -781,14 +958,21 @@
   };
 
   // ---------- 베팅 ----------
-  const betOpen = () => !$('bet').classList.contains('hidden');
+  const betOpen = () => !$('bet').classList.contains('hidden') && !$('bet').classList.contains('closing');
   function openBet() {
     if (!G.race || G.race.phase === 'void') return toast('지금은 베팅할 수 없어요. 다음 경주를 기다려 주세요.');
-    if (G.me && G.me.jail > now()) return toast('감옥에서는 베팅할 수 없어요.');
-    $('bet').classList.remove('hidden'); G.betType = 'win'; G.pick = [];
+    if (G.me && G.me.jail > now()) return toast('감옥에 갇혀 있는 동안에는 베팅할 수 없어요.');
+    showEl($('bet')); G.betType = 'win'; G.pick = [];
     setBetTab('win'); renderRunners(); renderSlip(); S.ui();
   }
-  function closeBet() { $('bet').classList.add('hidden'); S.ui(); }
+  // 닫힘 애니메이션이 끝난 뒤 숨김. 그 사이 다시 열면 취소.
+  function hideAnimated(el) {
+    if (el.classList.contains('hidden') || el.classList.contains('closing')) return;
+    el.classList.add('closing');
+    el._hideT = setTimeout(() => { el.classList.remove('closing'); el.classList.add('hidden'); }, 160);
+  }
+  function showEl(el) { clearTimeout(el._hideT); el.classList.remove('closing', 'hidden'); }
+  function closeBet() { hideAnimated($('bet')); S.ui(); }
   function setBetTab(type) {
     G.betType = type; G.pick = [];
     for (const b of $('bet-tabs').children) b.classList.toggle('on', b.dataset.type === type);
@@ -879,7 +1063,7 @@
   // ---------- 상점 ----------
   const shopOpen = () => !$('modal').classList.contains('hidden') && $('modal')._mode === 'shop';
   function openShop() {
-    $('modal')._mode = 'shop'; renderShop(); $('modal').classList.remove('hidden'); S.ui();
+    $('modal')._mode = 'shop'; renderShop(); showEl($('modal')); S.ui();
   }
   function renderShop() {
     const body = $('modal-body'), p = G.me; if (!p) return; body.replaceChildren();
@@ -915,7 +1099,7 @@
   }
 
   // ---------- 모달 (순위·도움말·결과) ----------
-  function closeModal() { $('modal').classList.add('hidden'); S.ui(); }
+  function closeModal() { hideAnimated($('modal')); S.ui(); }
   for (const b of document.querySelectorAll('[data-close]')) b.addEventListener('click', () => { const t = b.dataset.close; if (t === 'bet') closeBet(); else closeModal(); });
   function openBoard() {
     $('modal')._mode = 'board'; const body = $('modal-body'); body.replaceChildren();
@@ -926,11 +1110,11 @@
         h('span', null, p.name), h('span', null, `${fmt(p.coins)} 코인`), p.best ? h('small', null, `최고 당첨 ${fmt(p.best)}`) : null
       ));
     }
-    body.appendChild(ol); $('modal').classList.remove('hidden'); S.ui();
+    body.appendChild(ol); showEl($('modal')); S.ui();
   }
   function openHelp() {
     $('modal')._mode = 'help'; const body = $('modal-body'); body.replaceChildren();
-    body.appendChild(h('h2', null, '안경원숭이 더비 · 도움말'));
+    body.appendChild(h('h2', null, '화성간건호 · 도움말'));
     const sec = (t) => body.appendChild(h('h3', null, t));
     sec('베팅');
     body.appendChild(h('p', null, '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 E 키를 누르거나 B 키로 베팅 창을 열 수 있어요.'));
@@ -940,10 +1124,12 @@
     sec('상점');
     body.appendChild(h('p', null, '잡화상 쿠쿠에게 가거나 I 키를 눌러 모자, 발자취, 탈것, 펫을 살 수 있어요.'));
     sec('파산');
-    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 30초 동안 감옥에 갇혀요. 풀려나면 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
+    body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 감옥에 갇혀 안경원숭이로 변해요.`));
+    body.appendChild(h('p', null, `익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 모아 농부 로봇 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출할 수도 있어요.`));
+    body.appendChild(h('p', null, `아무것도 안 해도 ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 뒤엔 풀려나요. 나올 때 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
     sec('단축키');
     body.appendChild(h('p', null, 'WASD/방향키: 이동 · Shift: 달리기 · E/스페이스: 상호작용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
-    $('modal').classList.remove('hidden'); S.ui();
+    showEl($('modal')); S.ui();
   }
   function openResult(m) {
     $('modal')._mode = 'result'; const body = $('modal-body'); body.replaceChildren();
@@ -964,7 +1150,7 @@
       const net = m.mine.pay - m.mine.stake;
       body.appendChild(h('div', { class: 'net' + (net >= 0 ? ' plus' : ' minus') }, `순이익: ${net >= 0 ? '+' : ''}${fmt(net)} 코인`));
     }
-    $('modal').classList.remove('hidden');
+    showEl($('modal'));
   }
 
   // ---------- 바 버튼 ----------
@@ -980,7 +1166,7 @@
     }
   });
   function toggleMute() { AU.setMuted(!AU.muted); $('mute-btn').classList.toggle('off', AU.muted); S.ui(); }
-  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '경주 자동 중계를 켰어요.' : '경주 자동 중계를 껏어요.'); }
+  function toggleWatch() { G.watch = !G.watch; if (G.watch && G.race && G.race.phase === 'race') setCam('race'); else setCam('follow'); toast(G.watch ? '경주 자동 중계를 켰어요.' : '경주 자동 중계를 껐어요.'); }
 
   // 이모트 바
   const emoteBar = $('emotes');
@@ -1004,6 +1190,16 @@
     b.addEventListener('click', () => { T.g = b.dataset.g; for (const x of $('gender').querySelectorAll('button[data-g]')) x.classList.toggle('on', x.dataset.g === T.g); drawAvatar(); });
   }
   $('reroll').addEventListener('click', () => { T.seed = crypto.getRandomValues(new Uint32Array(1))[0]; drawAvatar(); S.hover(); });
+  // 로고: 글꼴이 로드된 뒤 한 번 그리고, 화면 크기에 맞는 정수 배율로만 키운다 (픽셀 뭉개짐 방지)
+  let LOGO = null;
+  function sizeLogo() {
+    if (!LOGO) return;
+    const el = $('logo'), k = Math.max(2, Math.min(6, Math.floor(Math.min(innerWidth * 0.62 / LOGO.width, innerHeight * 0.3 / LOGO.height))));
+    el.width = LOGO.width; el.height = LOGO.height; el.getContext('2d').drawImage(LOGO, 0, 0);
+    el.style.width = LOGO.width * k + 'px'; el.style.height = LOGO.height * k + 'px';
+  }
+  document.fonts.load('bold 12px Galmuri11').then(() => { LOGO = A.logo(); sizeLogo(); });
+  addEventListener('resize', sizeLogo);
   const avCtx = $('avatar').getContext('2d');
   let avDir = 0;
   function drawAvatar() {
@@ -1040,7 +1236,7 @@
     $('title').classList.add('hidden'); $('hud').classList.remove('hidden');
     setCam('follow'); resize(); bake();
     $('coins').textContent = fmt(G.me.coins);
-    if (G.me.jail > now()) toast(`아직 감옥이에요. ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요. 채팅은 할 수 있어요.`, 'bad');
+    if (G.me.jail > now()) toast(`아직 감옥이에요. 쌀 ${G.me.rice || 0}/${CFG.RICE_NEED} · ${Math.ceil((G.me.jail - now()) / 1000)}초 남았어요.`, 'bad');
     S.ui();
     AU.setCrowd(0.15);
   }
@@ -1057,13 +1253,8 @@
       AU.setCrowd(ph === 'race' ? 0.55 : ph === 'result' ? 0.7 : 0.12);
       render();
     } else if (G.mode === 'title') {
-      checkPractice();
-      updateCam(dt);
-      bx.fillStyle = '#2a100a'; bx.fillRect(0, 0, VW, VH);
-      bx.drawImage(ground, -G.cam.x, -G.cam.y);
-      const rv = runnersView();
-      if (rv) for (const q of rv.list) drawRunner(q, G.cam.x, G.cam.y, rv, ts / 1000);
-      vx.drawImage(buf, 0, 0, VW * gp, VH * gp);
+      checkPractice(); updateParts(dt); updateCam(dt);
+      render(); // 타이틀 배경도 관중석·전광판·결승선까지 실제 경기장 그대로
     }
     // 카운트다운 비프
     if (G.mode === 'play' && G.race && G.race.phase === 'closed') {
@@ -1079,5 +1270,7 @@
   requestAnimationFrame(frame);
 
   // 테스트 훅
-  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast };
+  // 자동화 테스트용 조회 훅 (읽기 전용 요약)
+  window.__TD = { G, send, now, runnersView, h, addChat, sysChat, toast,
+    state: () => { const p = G.players.get(G.id); return p && G.me ? { x: p.x, y: p.y, jail: G.me.jail > now(), rice: G.me.rice || 0, coins: G.me.coins, riceList: G.rice.map((r) => ({ x: r.x, y: r.y, ready: r.at <= now() })) } : null; } };
 })();

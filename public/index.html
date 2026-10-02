@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>안경원숭이 더비 · 화성 경마장</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>화성간건호 · 화성 안경원숭이 경마장</title>
 <link rel="icon" href="img/icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -12,8 +12,8 @@
 
 <div id="title">
   <div class="title-in">
-    <div class="logo">안경원숭이 더비</div>
-    <div class="logo-sub">MARS TARSIER DERBY</div>
+    <h1 class="logo"><canvas id="logo" role="img" aria-label="화성간건호"></canvas></h1>
+    <div class="logo-sub">화성 안경원숭이 경마장</div>
     <div class="tcard">
       <canvas id="avatar" width="40" height="44"></canvas>
       <div class="tform">
@@ -46,6 +46,12 @@
     <span id="emotes"></span>
   </div>
   <div id="prompt" class="hidden"></div>
+  <!-- 모바일 터치 컨트롤 (JS가 터치 기기 감지 시 표시) -->
+  <div id="touch" class="hidden">
+    <div id="joy-zone"><canvas id="joy" width="140" height="140"></canvas></div>
+    <button id="act-btn">E</button>
+    <button id="chat-toggle">💬</button>
+  </div>
 </div>
 
 <div id="bet" class="drawer hidden">

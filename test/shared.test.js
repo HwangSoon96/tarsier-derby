@@ -30,10 +30,19 @@ describe('world', () => {
   it('blocked: 관중석 사이 통로는 통과 가능', () => {
     assert.equal(W.blocked(480, 460), false);
   });
-  it('clampCage: 우리 밖으로 나갈 수 없음', () => {
-    const [x, y] = W.clampCage(0, 0);
-    assert.ok(x >= W.ZONES.cageIn.x);
-    assert.ok(y >= W.ZONES.cageIn.y);
+  it('clampJail: 감옥 밖으로 나갈 수 없음', () => {
+    for (const [px, py] of [[0, 0], [2000, 2000], [0, 450], [860, 9999]]) {
+      const [x, y] = W.clampJail(px, py), z = W.ZONES.jailIn;
+      assert.ok(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h, `${px},${py} → ${x},${y}`);
+    }
+  });
+  it('감옥: 벼·간수는 안쪽, 쇠창살은 막힘, 석방 위치는 밖이고 걸을 수 있음', () => {
+    const z = W.ZONES.jailIn, f = W.NPCS.find((n) => n.id === 'farmer');
+    for (const r of W.RICE) assert.ok(W.inRect(z, r.x, r.y), `rice ${r.id}`);
+    assert.ok(W.inRect(z, f.x, f.y - 1));
+    assert.ok(W.blocked(W.ZONES.jail.x + 2, 450) && W.blocked(860, W.ZONES.jail.y + 4));
+    assert.ok(!W.blocked(W.ZONES.jail.x - 10, W.ZONES.jail.y + W.ZONES.jail.h - 14));
+    for (const k of W.ROCKS) assert.ok(!W.inRect(W.ZONES.jail, k.x, k.y));
   });
   it('look: 같은 시드 → 같은 외형', () => {
     const a = W.look(12345, 'm'), b = W.look(12345, 'm');

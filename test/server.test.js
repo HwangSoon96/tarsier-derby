@@ -17,18 +17,19 @@ function ws(path = '/ws') {
     s.on('message', (d) => {
       const m = JSON.parse(d);
       s.msgs.push(m);
-      if (s.q.length) s.q.shift()(m);
+      // 기다리는 모든 조건에 전달 (동시에 여러 waitFor를 걸어도 메시지를 놓치지 않음)
+      s.q = s.q.filter((check) => !check(m));
     });
     s.on('error', reject);
   });
 }
 function waitFor(s, pred, ms = 5000) {
-  const found = s.msgs.find(pred);
+  const found = s.msgs.find((m) => { try { return pred(m); } catch { return false; } });
   if (found) return Promise.resolve(found);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    const check = (m) => { if (pred(m)) { clearTimeout(timer); resolve(m); } else s.q.push(check); };
-    s.q.push(check);
+    // 조건식이 예외를 던지면(예: 필드 없는 메시지) 해당 메시지는 불일치로 처리 → 수신 처리 루프가 끊기지 않게
+    s.q.push((m) => { let ok = false; try { ok = pred(m); } catch { ok = false; } if (!ok) return false; clearTimeout(timer); resolve(m); return true; });
   });
 }
 const get = (path) => new Promise((res, rej) => http.get(`http://localhost:${port}${path}`, (r) => { let b = ''; r.on('data', (d) => b += d); r.on('end', () => res({ status: r.statusCode, body: b, headers: r.headers })); }).on('error', rej));
@@ -187,5 +188,103 @@ describe('WebSocket', () => {
     assert.equal(w2.me.coins, 1000);
     assert.equal(w2.token, undefined); // 기존 토큰이라 새 토큰 안 줌
     s2.close();
+  });
+});
+
+describe('파산 감옥', () => {
+  const step = async (s, from, to) => {
+    // 서버 이동 예산 안에서 조금씩 걸어감
+    let [x, y] = from;
+    while (Math.hypot(to[0] - x, to[1] - y) > 0.5) {
+      const d = Math.hypot(to[0] - x, to[1] - y), k = Math.min(1, 2 / d); // 50px/s (걷기 속도 72px/s 이내)
+      x += (to[0] - x) * k; y += (to[1] - y) * k;
+      s.send(JSON.stringify({ t: 'move', x, y, d: 0, r: 0 }));
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return [x, y];
+  };
+  it('파산 → 감옥 수감, 베팅·상점 막힘, 벼 베기 → 쌀 판매로 석방 + 지원금', async () => {
+    const W = require('../shared/world.js'), CFG = W.CFG;
+    const realRandom = Math.random; Math.random = () => 0.99; // 행운 탈출 없이 판매 경로만 검증
+    try {
+      const s = await ws();
+      s.send(JSON.stringify({ t: 'hello', name: '벼베기', g: 'f', seed: 4242 }));
+      await waitFor(s, (m) => m.t === 'welcome');
+      const jailed = waitFor(s, (m) => m.t === 'me' && m.me.jail > 0);
+      srv.bankrupt('벼베기');
+      const j = await jailed;
+      assert.ok(W.inRect(W.ZONES.jailIn, j.x, j.y));
+      assert.equal(j.me.rice, 0);
+      // 갇힌 동안 베팅·구매 거절
+      s.send(JSON.stringify({ t: 'buy', item: W.ITEMS[0].id }));
+      assert.equal((await waitFor(s, (m) => m.t === 'err')).code, 'jail');
+      s.msgs.length = 0;
+      // 너무 일찍 팔면 거절
+      let pos = [j.x, j.y];
+      const f = W.NPCS.find((n) => n.id === 'farmer');
+      pos = await step(s, pos, [f.x + 8, f.y - 8]);
+      s.send(JSON.stringify({ t: 'sell' }));
+      assert.equal((await waitFor(s, (m) => m.t === 'err')).code, 'rice');
+      s.msgs.length = 0;
+      // 멀리 있는 벼는 못 벰
+      s.send(JSON.stringify({ t: 'rice', id: W.RICE.length - 1 }));
+      // 가까운 벼부터 RICE_NEED개 베기
+      let got = 0;
+      for (const r of W.RICE) {
+        if (got >= CFG.RICE_NEED) break;
+        pos = await step(s, pos, [r.x, r.y + 6]);
+        await new Promise((res) => setTimeout(res, CFG.RICE_COOLDOWN_MS));
+        const me = waitFor(s, (m) => m.t === 'me' && m.me.rice === got + 1);
+        s.send(JSON.stringify({ t: 'rice', id: r.id }));
+        await me; got++;
+        // 같은 벼를 바로 또 베면 무시 (다시 익는 중)
+        s.send(JSON.stringify({ t: 'rice', id: r.id }));
+      }
+      const prof = Object.values(srv.db.profiles).find((p) => p.name === '벼베기');
+      assert.equal(prof.rice, CFG.RICE_NEED);
+      pos = await step(s, pos, [f.x + 8, f.y - 8]);
+      const freed = waitFor(s, (m) => m.t === 'freed');
+      const after = waitFor(s, (m) => m.t === 'me' && !m.me.jail);
+      s.send(JSON.stringify({ t: 'sell' }));
+      assert.equal((await freed).why, 'sold');
+      const a = await after;
+      assert.equal(a.me.coins, CFG.BAILOUT);
+      assert.ok(!W.inRect(W.ZONES.jail, a.x, a.y) && !W.blocked(a.x, a.y));
+      s.close();
+    } finally { Math.random = realRandom; }
+  });
+  it('벼를 베다 낮은 확률로 즉시 탈출', async () => {
+    const W = require('../shared/world.js');
+    const s = await ws();
+    s.send(JSON.stringify({ t: 'hello', name: '행운아', g: 'm', seed: 99 }));
+    await waitFor(s, (m) => m.t === 'welcome');
+    const jailed = waitFor(s, (m) => m.t === 'me' && m.me.jail > 0);
+    srv.bankrupt('행운아');
+    const j = await jailed;
+    // 앞 테스트가 베지 않은(익어 있는) 마지막 벼
+    const r = W.RICE[W.RICE.length - 1];
+    await step(s, [j.x, j.y], [r.x, r.y + 6]);
+    const realRandom = Math.random; Math.random = () => 0.0;
+    try {
+      const freed = waitFor(s, (m) => m.t === 'freed');
+      s.send(JSON.stringify({ t: 'rice', id: r.id }));
+      assert.equal((await freed).why, 'lucky');
+    } finally { Math.random = realRandom; }
+    s.close();
+  });
+  it('시간이 지나면 자동 석방', async () => {
+    const s2srv = await createServer({ port: 0, dataFile: tmp + '.j', cycleMs: 16000, jailMs: 300, log: false });
+    try {
+      const s = new WebSocket(`ws://127.0.0.1:${s2srv.port}/ws`);
+      await new Promise((r) => s.once('open', r));
+      const msgs = []; s.on('message', (d) => msgs.push(JSON.parse(d)));
+      s.send(JSON.stringify({ t: 'hello', name: '기다림', g: 'm', seed: 5 }));
+      await new Promise((r) => setTimeout(r, 200));
+      s2srv.bankrupt('기다림');
+      await new Promise((r) => setTimeout(r, 800));
+      const f = msgs.find((m) => m.t === 'freed');
+      assert.ok(f && f.why === 'time');
+      s.close();
+    } finally { await s2srv.close(); try { require('fs').unlinkSync(tmp + '.j'); } catch {} }
   });
 });
