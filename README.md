@@ -36,7 +36,15 @@ npm start          # 빌드 후 http://localhost:8080
 | `DATA_FILE` | `data/players.json` | 플레이어 데이터 저장 위치 |
 | `TRUST_PROXY` | - | `1`이면 `X-Forwarded-For`로 IP를 판단합니다 (리버스 프록시 뒤에서 사용) |
 | `ALLOWED_ORIGINS` | - | 추가로 허용할 WebSocket Origin (쉼표로 구분) |
-| `MAX_PER_IP` / `MAX_CONN` | `8` / `300` | IP당·전체 동시 접속 제한 |
+| `MAX_PER_IP` / `MAX_CONN` | `60` / `300` | IP당·전체 동시 접속 제한 (같은 공유기·강의실 사용자 고려) |
+
+### 친구 초대 (인터넷 공개)
+
+```bash
+npm run share
+```
+
+게임 서버와 Cloudflare 임시 터널을 함께 띄우고 `https://xxxx.trycloudflare.com` 주소를 출력합니다. 계정·공유기 설정이 필요 없고, 처음 실행하면 `cloudflared`를 `~/.local/bin`에 내려받습니다. 주소가 실제로 열리기까지 30초~1분 걸릴 수 있습니다. 끄면(Ctrl+C) 주소도 사라지고, 다시 켜면 새 주소가 나옵니다. 이 컴퓨터가 켜져 있는 동안만 접속할 수 있습니다.
 
 ## 조작
 
