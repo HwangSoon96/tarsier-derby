@@ -233,9 +233,16 @@ for (const [name, dev] of [['iPhone 13', devices['iPhone 13']], ['Galaxy S9+', d
     await p.keyboard.press('Enter');
     await p.waitForFunction(() => !document.getElementById('chat').classList.contains('open') && /폰에서 안녕/.test(document.getElementById('chat-log').textContent));
     assertLayout(hud, vw, vh, `${name} 게임 화면`);
-    // 조이스틱: 왼쪽 아래를 누르고 오른쪽으로 끌기
+    // 조이스틱: 버튼이 없는 곳이면 화면 어디서든 (여기선 오른쪽 가운데) 누르고 끌기
     const z = await p.locator('#joy-zone').boundingBox();
-    const cx = z.x + z.width / 2, cy = z.y + z.height * 0.7, s0 = await state(p);
+    assert.ok(z.width >= vw - 1 && z.height >= vh - 1, '이동 영역이 화면 전체가 아님');
+    const cx = vw * 0.7, cy = vh * 0.5, s0 = await state(p);
+    assert.equal(await p.evaluate(([x, y]) => document.elementFromPoint(x, y).id, [cx, cy]), 'joy-zone', '화면 가운데를 눌렀는데 이동 영역이 아님');
+    // 버튼 위는 이동 영역이 아니라 버튼이 눌림
+    for (const sel of ['#act-btn', '#chat-toggle', '#bar [data-act="bet"]']) {
+      const bb = await p.locator(sel).boundingBox();
+      assert.ok(await p.evaluate(([x, y, s]) => document.elementFromPoint(x, y).closest(s) !== null, [bb.x + bb.width / 2, bb.y + bb.height / 2, sel]), `${sel} 위가 버튼이 아님`);
+    }
     const cdp = await p.context().newCDPSession(p);
     const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
     await touch('touchStart', cx, cy);

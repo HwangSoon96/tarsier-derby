@@ -55,7 +55,7 @@
   const cache = new Map();
   const cached = (key, make) => { let c = cache.get(key); if (!c) { if (cache.size > 8000) cache.clear(); c = make(); cache.set(key, c); } return c; };
   const PROPS = {};
-  for (const k of ['dome', 'rocket', 'shop', 'barsBack', 'barsFront', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
+  for (const k of ['dome', 'rocket', 'shop', 'jailSign', 'dish', 'solar', 'jumbo', 'flag', 'finish', 'rock0', 'rock2', 'ore0', 'ore1', 'ore2']) PROPS[k] = A.prop(k);
   function standsSprite(w) {
     const [c, g] = A.mk(w, 30);
     for (let r = 0; r < 4; r++) { A.R(g, 0, r * 6, w, 6, r % 2 ? '#7a8098' : '#8a90a8'); A.R(g, 0, r * 6, w, 1, '#b0b6c8'); }
@@ -138,7 +138,7 @@
       let c = REG[n < 0.38 ? 0 : n < 0.5 ? 1 : n < 0.63 ? 2 : 3];
       let pd = 99; if (y > 250 || x < 260 || x > 700) for (const s of segs) pd = Math.min(pd, segDist(x, y, s[0], s[1], s[2], s[3]));
       if (pd < 9 + vnoise(x / 5, y / 5) * 3) c = pd < 7 ? [214, 132, 86] : [204, 120, 76];
-      if (x >= pz.x && x < pz.x + pz.w && y >= pz.y + 4 && y < pz.y + pz.h + 4) {
+      if (x >= pz.x + 4 && x <= pz.x + pz.w - 4 && y >= pz.y + 9 && y <= pz.y + pz.h + 9) {
         // 물 댄 논: 진흙 바닥 위 얕은 물 + 잔물결, 벼 포기 자리는 젖은 흙
         const wv = vnoise(x / 9, y / 4), dry = RICE.some((r) => Math.abs(x - r.x) < 7 && y > r.y - 3 && y < r.y + 3);
         c = dry ? [92, 64, 40] : wv > 0.62 ? [118, 150, 150] : wv > 0.4 ? [92, 124, 120] : [80, 106, 98];
@@ -182,9 +182,38 @@
   prop('dish', 268, 70); prop('solar', 664, 150); prop('solar', 300, 150); prop('dish', 940, 360);
   prop('shop', 144, 366); prop('awning', 272, 441); prop('counter', 272, 470);
   prop('standL', 395, 474); prop('standR', 565, 474);
-  // 감옥 쇠창살: 뒤쪽(위·좌우 변)은 안의 사람보다 뒤, 앞쪽(아래 변)은 맨 앞
-  STATIC.push({ k: 'barsBack', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + 8 });
-  STATIC.push({ k: 'barsFront', x: ZONES.jail.x, y: ZONES.jail.y - 2, sy: ZONES.jail.y + ZONES.jail.h + 6 });
+  // 울타리: 짧은 조각으로 잘라 조각마다 바닥 y로 정렬 → 울타리 뒤에 선 사람은 가려지고 앞에 선 사람은 덮는다.
+  function fence(pts, style, closed, gateAt) {
+    const m = closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < m; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+      const gate = gateAt && gateAt(x0, y0, x1, y1);
+      const sg = A.fenceSeg(x0, y0, x1, y1, style, i === 0, gate);
+      STATIC.push({ img: sg.c, x: sg.x, y: sg.y, sy: Math.max(y0, y1) });
+    }
+  }
+  // 경마장 울타리: 트랙 바깥 레일 둘레(W.FENCE_R)를 10px 간격으로 한 바퀴
+  {
+    const pts = [], Rr = W.FENCE_R, L = TRACK.half, cx = TRACK.cx, cy = TRACK.cy, step = 10;
+    for (let x = cx - L; x < cx + L; x += step) pts.push([x, cy + Rr]);
+    for (let a = Math.PI / 2; a > -Math.PI / 2; a -= step / Rr) pts.push([cx + L + Math.cos(a) * Rr, cy + Math.sin(a) * Rr]);
+    for (let x = cx + L; x > cx - L; x -= step) pts.push([x, cy - Rr]);
+    for (let a = -Math.PI / 2; a > -Math.PI * 1.5; a -= step / Rr) pts.push([cx - L + Math.cos(a) * Rr, cy + Math.sin(a) * Rr]);
+    fence(pts.map(([x, y]) => [Math.round(x), Math.round(y)]), 'rail', true);
+  }
+  // 감옥 쇠창살: 충돌 벽(SOLIDS)과 같은 선. 뒤·옆은 높게(24px), 앞은 안이 보이게 조금 낮게(18px), 왼쪽 아래는 자물쇠 달린 문.
+  {
+    const J = ZONES.jail, x0 = J.x + 4, x1 = J.x + J.w - 4, yT = J.y + 9, yB = J.y + J.h + 9;
+    const seg = (a, b, n) => { const out = []; for (let i = 0; i <= n; i++) out.push([Math.round(a[0] + (b[0] - a[0]) * i / n), Math.round(a[1] + (b[1] - a[1]) * i / n)]); return out; };
+    fence(seg([x0, yT], [x1, yT], 12), 'iron', false);
+    for (const x of [x0, x1]) fence(seg([x, yT], [x, yB], 12), 'iron', false);
+    // 앞벽: 왼쪽 [창살] [문 하나] [창살] 순서. 문은 한 조각이라 자물쇠가 하나만 그려짐.
+    const gL = J.x + 18, gR = J.x + 42;
+    fence([[x0, yB], [gL, yB]], 'ironF', false);
+    fence([[gL, yB], [gR, yB]], 'ironF', false, () => true);
+    fence(seg([gR, yB], [x1, yB], 9), 'ironF', false);
+    prop('jailSign', J.x + J.w / 2, J.y + 2, J.y + 3);
+  }
   prop('jumbo', 480, 340); prop('finish', 480, 349);
   for (const [x, y] of [[214, 196], [746, 196], [214, 404], [746, 404]]) prop('flag', x, y);
   const ROCK_SPR = ['rock0', 'ore0', 'rock2', 'ore1', 'rock0', 'ore2', 'rock2'];
@@ -485,7 +514,7 @@
       const ride = p.eq.ride && ITEM[p.eq.ride] ? ITEM[p.eq.ride].speed : 1;
       const v = CFG.WALK * ride * (run ? CFG.RUN_MULT : 1) * (p.act >= 0 ? 0.35 : 1) * dt, ox = p.x, oy = p.y;
       if (jailed) [p.x, p.y] = W.clampJail(p.x + dx * v, p.y + dy * v);
-      else { if (!W.blocked(p.x + dx * v, p.y)) p.x += dx * v; if (!W.blocked(p.x, p.y + dy * v)) p.y += dy * v; }
+      else [p.x, p.y] = W.move(p.x, p.y, dx * v, dy * v); // 벽에 닿으면 벽을 따라 미끄러짐
       // 대각선에서 손을 뗄 때 두 키가 동시에 안 떨어져 마지막 한 프레임에 몸이 옆으로 홱 도는 것 방지:
       // 대각선이 끝난 지 0.1초 안의 단일 방향은 진행은 하되 방향은 유지
       // (키보드 전용 — 조이스틱은 아날로그라 해당 없음)
@@ -629,10 +658,12 @@
     drawJoy(0, 0);
     jz.addEventListener('touchstart', (e) => {
       e.preventDefault(); AU.init();
+      if (document.activeElement === $('chat-in')) $('chat-in').blur(); // 채팅 중 화면을 누르면 키보드 닫기
+      if (joyId !== null) return;                                         // 이미 이동 중인 손가락이 있으면 두 번째 손가락은 무시
       const t = e.changedTouches[0]; joyId = t.identifier;
       baseX = t.clientX; baseY = t.clientY;
-      // 조이스틱 캔버스를 터치 위치 근처에 이동
-      jc.style.left = baseX + 'px'; jc.style.bottom = ''; jc.style.top = (baseY - 70) + 'px';
+      // 누른 자리를 중심으로 조이스틱 표시
+      jc.style.left = (baseX - 70) + 'px'; jc.style.bottom = ''; jc.style.top = (baseY - 70) + 'px';
       jc.style.transform = 'none'; jc.classList.add('on');
       drawJoy(0, 0);
     }, { passive: false });
@@ -692,7 +723,7 @@
     bx.fillStyle = '#5a2414'; bx.fillRect(0, 0, VW, VH);
     bx.drawImage(ground, -ox, -oy);
     const list = [], tms = performance.now(), sec = tms / 1000;
-    for (const s of STATIC) if (s.x - ox < VW && s.x + PROPS[s.k].width - ox > 0 && s.y - oy < VH && s.y + PROPS[s.k].height - oy > 0) list.push([s.sy, 0, s]);
+    for (const s of STATIC) { const im = s.img || PROPS[s.k]; if (s.x - ox < VW && s.x + im.width - ox > 0 && s.y - oy < VH && s.y + im.height - oy > 0) list.push([s.sy, 0, s]); }
     for (const r of G.rocks) if (Math.abs(r.x - ox - VW / 2) < VW / 2 + 20 && Math.abs(r.y - oy - VH / 2) < VH / 2 + 30) list.push([r.y, 1, r]);
     for (const n of NPCS) list.push([n.y, 2, n]);
     for (const p of G.players.values()) if (Math.abs(p.x - ox - VW / 2) < VW / 2 + 30 && Math.abs(p.y - oy - VH / 2) < VH / 2 + 60) { list.push([p.y, 3, p]); if (p.eq.pet && !(p.jail > now())) list.push([p.petY, 4, p]); }
@@ -716,7 +747,7 @@
     commentary(rv);
   }
   function drawStatic(s, ox, oy, sec, rv) {
-    bx.drawImage(PROPS[s.k], s.x - ox, s.y - oy);
+    bx.drawImage(s.img || PROPS[s.k], s.x - ox, s.y - oy);
     if (s.k === 'standL' || s.k === 'standR') drawCrowd(s, ox, oy, sec, rv);
     else if (s.k === 'jumbo') drawJumbo(s.x - ox + 4, s.y - oy + 4, rv);
     else if (s.k === 'rocket' && Math.floor(sec * 2) % 2) A.R(bx, s.x - ox + 13, s.y - oy + 1, 2, 1, '#ff5050');

@@ -185,6 +185,11 @@ input:focus { border-color: var(--hi); }
   #nick { font-size: 16px; }
   #avatar { width: calc(40px * 3); height: calc(44px * 3); }
   canvas#view { touch-action: none; }
+  /* 이동: 버튼·창을 뺀 화면 어디든 누르고 끌면 그 자리에 조이스틱이 생김.
+     조이스틱 영역은 화면 전체지만 HUD(10)보다 아래(5)에 깔리고, 정보만 보여 주는 패널은 터치를 그대로 통과시킨다. */
+  #touch { z-index: 5; }
+  #joy-zone { left: 0; top: 0; width: 100%; height: 100%; bottom: auto; }
+  #me-box, #race-box, #board-box, #ticker, #toasts, #mybets, #prompt, #chat:not(.open) { pointer-events: none; }
   /* 탭 즉시 반응: 더블탭 확대 대기 제거 + 누르는 순간 눌림 표시 */
   button, .rn, .item { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .rn:active, .item:active, .drawer button:active, .mbox button:active { filter: brightness(1.25); transform: translateY(1px); }

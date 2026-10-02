@@ -432,28 +432,12 @@
         for (let x = 0; x < 240; x += 40) R(g, x, 0, 2, 28, '#6a7088');
         break;
       }
-      case 'barsBack': case 'barsFront': {
-        // 감옥 쇠창살: 위·아래 철골 + 세로 창살(밝은 면 1px). 뒤(위쪽 변 + 좌우 변)와 앞(아래쪽 변)을 나눠 y정렬.
-        const Z = window.WORLD.ZONES.jail;
-        [c, g] = mk(Z.w, Z.h + 12);
-        const beam = (x0, x1, y) => { R(g, x0, y, x1 - x0, 3, '#5a6078'); R(g, x0, y, x1 - x0, 1, '#8a92aa'); R(g, x0, y + 3, x1 - x0, 1, '#3a3e50'); };
-        const bars = (x0, x1, y0, y1) => { for (let x = x0; x <= x1 - 2; x += 5) { R(g, x, y0, 2, y1 - y0, '#9aa2b8'); R(g, x, y0, 1, y1 - y0, '#d8dce8'); R(g, x + 1, y1 - 1, 1, 1, '#5a6078'); } };
-        const post = (x, y0, y1) => { R(g, x, y0, 4, y1 - y0, '#4a4e62'); R(g, x, y0, 1, y1 - y0, '#7a82a0'); R(g, x - 1, y0 - 1, 6, 2, '#6a7290'); };
-        if (id === 'barsBack') {
-          // 뒷벽: 창살 + 위 철골, 좌우 벽 기둥
-          bars(4, Z.w - 4, 2, 13); beam(0, Z.w, 1); beam(0, Z.w, 12);
-          post(0, 0, Z.h + 2); post(Z.w - 4, 0, Z.h + 2);
-          for (let y = 18; y < Z.h - 4; y += 5) { R(g, 1, y, 2, 2, '#9aa2b8'); R(g, Z.w - 3, y, 2, 2, '#9aa2b8'); }
-          R(g, Z.w / 2 - 18, 0, 36, 9, '#d94a3a'); R(g, Z.w / 2 - 18, 0, 36, 1, '#ff7a6a'); R(g, Z.w / 2 - 18, 8, 36, 1, '#8a2a20'); text(g, 'JAIL', Z.w / 2 - 8, 2, '#ffffff');
-        } else {
-          // 앞벽: 낮은 창살(안의 벼밭이 보이도록) + 왼쪽 아래 창살문(자물쇠)
-          const y0 = Z.h - 4, y1 = Z.h + 9;
-          bars(4, 18, y0, y1); bars(44, Z.w - 4, y0, y1); beam(0, Z.w, y0 - 1); beam(0, Z.w, y1 - 1);
-          R(g, 18, y0, 26, y1 - y0, 'rgba(0,0,0,0)'); bars(20, 42, y0 + 1, y1 - 1);
-          R(g, 18, y0, 2, y1 - y0, '#3a3e50'); R(g, 42, y0, 2, y1 - y0, '#3a3e50');
-          R(g, 38, y0 + 4, 4, 4, '#f2c230'); R(g, 39, y0 + 5, 2, 1, '#8a6a10');
-          post(0, y0 - 2, y1); post(Z.w - 4, y0 - 2, y1);
-        }
+      case 'jailSign': {
+        // 감옥 간판: 기둥 두 개에 매단 빨간 JAIL 판
+        [c, g] = mk(40, 22);
+        R(g, 4, 8, 2, 14, '#3a3e50'); R(g, 34, 8, 2, 14, '#3a3e50');
+        R(g, 0, 0, 40, 11, '#8a2a20'); R(g, 1, 1, 38, 9, '#d94a3a'); R(g, 1, 1, 38, 1, '#ff7a6a');
+        text(g, 'JAIL', 12, 3, '#ffffff');
         break;
       }
       case 'dish': {
@@ -609,5 +593,36 @@
     return outline(c, 0.4);
   }
 
-  window.ART = { rice, logo, mk, R, shade, mix, outline, text, textW, person, hat, pickaxe, swingAngle, IMPACT_T, tarsier, tarsierFront, ride, RIDE, pet, npc, prop, emoteIcon, POSE, FLIP };
+  // ---------- 울타리 조각 ----------
+  // 바닥의 두 점 (x0,y0)→(x1,y1) 사이 울타리를 그린 캔버스와 왼쪽 위 좌표. 조각마다 따로 y정렬해서 앞뒤가 맞는다.
+  // style 'rail': 경마장 흰 나무 난간 (기둥 + 가로대 두 줄) / 'iron': 감옥 쇠창살 (촘촘한 세로 창살 + 위·가운데 철골)
+  // first: 이 조각 시작점에 기둥을 세울지 (이어지는 조각끼리 기둥이 겹치지 않게)
+  function fenceSeg(x0, y0, x1, y1, style, first, gate) {
+    const H = style === 'rail' ? 9 : style === 'ironF' ? 18 : 24, pad = 3;
+    const minX = Math.floor(Math.min(x0, x1)) - pad, maxX = Math.ceil(Math.max(x0, x1)) + pad;
+    const minY = Math.floor(Math.min(y0, y1)) - H - pad, maxY = Math.ceil(Math.max(y0, y1)) + pad;
+    const [c, g] = mk(maxX - minX + 1, maxY - minY + 1);
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0))), at = (t) => [Math.round(x0 + (x1 - x0) * t) - minX, Math.round(y0 + (y1 - y0) * t) - minY];
+    const line = (h, col) => { for (let i = 0; i <= n; i++) { const [x, y] = at(i / n); R(g, x, y - h, 1, 1, col); } };
+    if (style === 'rail') {
+      line(-1, 'rgba(60,20,10,.35)');                               // 바닥 그림자
+      line(H, '#f4f2ec'); line(H - 1, '#b8b0a4'); line(4, '#e8e4dc'); line(3, '#a8a094'); // 가로대 두 줄
+      const post = (t) => { const [x, y] = at(t); R(g, x - 1, y - H - 1, 3, H + 2, '#6a5a50'); R(g, x, y - H, 1, H + 1, '#ffffff'); R(g, x + 1, y - H, 1, H + 1, '#cfc8bc'); R(g, x - 1, y, 3, 1, 'rgba(60,20,10,.4)'); };
+      if (first) post(0); post(1);
+    } else {
+      line(-1, 'rgba(20,10,10,.4)');
+      // 세로 창살 3px 간격: 어두운 테두리 + 밝은 면
+      for (let i = 0; i <= n; i += 3) { const [x, y] = at(i / n); R(g, x, y - H, 1, H + 1, gate ? '#7a6a3a' : '#7a82a0'); R(g, x, y - H, 1, 1, '#d8dce8'); }
+      for (let i = 1; i <= n; i += 3) { const [x, y] = at(i / n); R(g, x, y - H, 1, H + 1, 'rgba(30,32,44,.55)'); }
+      line(H, '#4a4e62'); line(H - 1, '#9aa2b8'); line(H - 2, '#3a3e50');      // 위 철골
+      line(Math.round(H / 2), '#5a6078'); line(Math.round(H / 2) - 1, '#8a92aa'); // 가운데 철골
+      line(0, '#3a3e50');
+      if (gate) { const [x, y] = at(0.5); R(g, x - 2, y - Math.round(H / 2) - 2, 4, 4, '#f2c230'); R(g, x - 1, y - Math.round(H / 2) - 1, 2, 1, '#8a6a10'); }
+      const post = (t) => { const [x, y] = at(t); R(g, x - 2, y - H - 2, 4, H + 3, '#3a3e50'); R(g, x - 1, y - H - 1, 1, H + 1, '#8a92aa'); R(g, x - 2, y - H - 3, 4, 1, '#9aa2b8'); };
+      if (first) post(0); post(1);
+    }
+    return { c, x: minX, y: minY };
+  }
+
+  window.ART = { fenceSeg, rice, logo, mk, R, shade, mix, outline, text, textW, person, hat, pickaxe, swingAngle, IMPACT_T, tarsier, tarsierFront, ride, RIDE, pet, npc, prop, emoteIcon, POSE, FLIP };
 })();

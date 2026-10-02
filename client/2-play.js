@@ -109,7 +109,7 @@
       const ride = p.eq.ride && ITEM[p.eq.ride] ? ITEM[p.eq.ride].speed : 1;
       const v = CFG.WALK * ride * (run ? CFG.RUN_MULT : 1) * (p.act >= 0 ? 0.35 : 1) * dt, ox = p.x, oy = p.y;
       if (jailed) [p.x, p.y] = W.clampJail(p.x + dx * v, p.y + dy * v);
-      else { if (!W.blocked(p.x + dx * v, p.y)) p.x += dx * v; if (!W.blocked(p.x, p.y + dy * v)) p.y += dy * v; }
+      else [p.x, p.y] = W.move(p.x, p.y, dx * v, dy * v); // 벽에 닿으면 벽을 따라 미끄러짐
       // 대각선에서 손을 뗄 때 두 키가 동시에 안 떨어져 마지막 한 프레임에 몸이 옆으로 홱 도는 것 방지:
       // 대각선이 끝난 지 0.1초 안의 단일 방향은 진행은 하되 방향은 유지
       // (키보드 전용 — 조이스틱은 아날로그라 해당 없음)
@@ -253,10 +253,12 @@
     drawJoy(0, 0);
     jz.addEventListener('touchstart', (e) => {
       e.preventDefault(); AU.init();
+      if (document.activeElement === $('chat-in')) $('chat-in').blur(); // 채팅 중 화면을 누르면 키보드 닫기
+      if (joyId !== null) return;                                         // 이미 이동 중인 손가락이 있으면 두 번째 손가락은 무시
       const t = e.changedTouches[0]; joyId = t.identifier;
       baseX = t.clientX; baseY = t.clientY;
-      // 조이스틱 캔버스를 터치 위치 근처에 이동
-      jc.style.left = baseX + 'px'; jc.style.bottom = ''; jc.style.top = (baseY - 70) + 'px';
+      // 누른 자리를 중심으로 조이스틱 표시
+      jc.style.left = (baseX - 70) + 'px'; jc.style.bottom = ''; jc.style.top = (baseY - 70) + 'px';
       jc.style.transform = 'none'; jc.classList.add('on');
       drawJoy(0, 0);
     }, { passive: false });

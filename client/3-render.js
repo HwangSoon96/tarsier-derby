@@ -7,7 +7,7 @@
     bx.fillStyle = '#5a2414'; bx.fillRect(0, 0, VW, VH);
     bx.drawImage(ground, -ox, -oy);
     const list = [], tms = performance.now(), sec = tms / 1000;
-    for (const s of STATIC) if (s.x - ox < VW && s.x + PROPS[s.k].width - ox > 0 && s.y - oy < VH && s.y + PROPS[s.k].height - oy > 0) list.push([s.sy, 0, s]);
+    for (const s of STATIC) { const im = s.img || PROPS[s.k]; if (s.x - ox < VW && s.x + im.width - ox > 0 && s.y - oy < VH && s.y + im.height - oy > 0) list.push([s.sy, 0, s]); }
     for (const r of G.rocks) if (Math.abs(r.x - ox - VW / 2) < VW / 2 + 20 && Math.abs(r.y - oy - VH / 2) < VH / 2 + 30) list.push([r.y, 1, r]);
     for (const n of NPCS) list.push([n.y, 2, n]);
     for (const p of G.players.values()) if (Math.abs(p.x - ox - VW / 2) < VW / 2 + 30 && Math.abs(p.y - oy - VH / 2) < VH / 2 + 60) { list.push([p.y, 3, p]); if (p.eq.pet && !(p.jail > now())) list.push([p.petY, 4, p]); }
@@ -31,7 +31,7 @@
     commentary(rv);
   }
   function drawStatic(s, ox, oy, sec, rv) {
-    bx.drawImage(PROPS[s.k], s.x - ox, s.y - oy);
+    bx.drawImage(s.img || PROPS[s.k], s.x - ox, s.y - oy);
     if (s.k === 'standL' || s.k === 'standR') drawCrowd(s, ox, oy, sec, rv);
     else if (s.k === 'jumbo') drawJumbo(s.x - ox + 4, s.y - oy + 4, rv);
     else if (s.k === 'rocket' && Math.floor(sec * 2) % 2) A.R(bx, s.x - ox + 13, s.y - oy + 1, 2, 1, '#ff5050');

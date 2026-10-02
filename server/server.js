@@ -300,7 +300,7 @@ function createServer(opts = {}) {
     const jailed = s.p.jail > now;
     let ok = dist <= s.budget;
     if (ok && jailed) [x, y] = W.clampJail(x, y);
-    else if (ok) { const mx = (x + s.x) / 2, my = (y + s.y) / 2; ok = !W.blocked(x, y) && !W.blocked(mx, my); }
+    else if (ok) ok = W.pathClear(s.x, s.y, x, y);
     if (!ok) { s.bad = (s.bad || 0) + 1; return send(s, { t: 'fix', x: s.x, y: s.y }); }
     s.budget -= dist;
     if (x !== s.x || y !== s.y || s.dir !== m.d || s.run !== !!m.r) s.moved = true;

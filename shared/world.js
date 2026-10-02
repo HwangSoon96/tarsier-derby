@@ -67,14 +67,74 @@
   for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) RICE.push({ id: RICE.length, x: 852 + c * 22, y: 424 + r * 24 });
 
   const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
-  // 발 위치(x,y) 기준 이동 가능 여부. 히트박스 폭 8, 높이 4.
-  function blocked(x, y) {
-    const hw = 4, hh = 3;
-    if (x - hw < 8 || y - hh < 8 || x + hw > W - 8 || y > H - 8) return true;
-    if (stadiumDist(x, y) < TRACK.outer + 4) return true;
-    for (const s of SOLIDS) if (x + hw > s.x && x - hw < s.x + s.w && y > s.y && y - hh < s.y + s.h) return true;
-    for (const k of ROCKS) if (Math.abs(x - k.x) < 8 && y > k.y - 4 && y - hh < k.y + 2) return true;
-    return false;
+
+  // ---------- 충돌 ----------
+  // 발 위치(x,y)에서 가장 가까운 장애물까지의 부호 거리(음수 = 파고듦)와 밀어낼 방향(바깥쪽 단위 벡터).
+  // 장애물은 발 크기(폭 8, 높이 3)만큼 부풀린 '모서리가 둥근 직사각형'이라 벽을 따라 비비며 가다가
+  // 모서리에 걸리지 않고 매끄럽게 돌아 나간다. 경기장은 울타리(FENCE_R) 바깥만 걸을 수 있다.
+  const FOOT_W = 4, FOOT_H = 3, CORNER = 3;
+  const FENCE_R = TRACK.outer + 4;                       // 경마장 울타리 기둥 선 (경기장 중심선에서의 거리)
+  const STAD_R = FENCE_R + 3;                            // 발이 울타리에서 떨어져야 하는 거리
+  // 부풀린 장애물: 직사각형은 [x0,y0,x1,y1] (모서리 반지름 CORNER)
+  const BOXES = [
+    ...SOLIDS.map((s) => [s.x - FOOT_W, s.y, s.x + s.w + FOOT_W, s.y + s.h + FOOT_H]),
+    ...ROCKS.map((k) => [k.x - 8, k.y - 4, k.x + 8, k.y + 2 + FOOT_H])
+  ];
+  function boxDist(b, x, y) {
+    // 모서리가 둥근 직사각형의 부호 거리 (안쪽 사각형을 CORNER만큼 줄이고 그만큼 둥글게)
+    const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, hx = (b[2] - b[0]) / 2 - CORNER, hy = (b[3] - b[1]) / 2 - CORNER;
+    const qx = Math.abs(x - cx) - hx, qy = Math.abs(y - cy) - hy, sx = x < cx ? -1 : 1, sy = y < cy ? -1 : 1;
+    if (qx > 0 && qy > 0) { const l = Math.hypot(qx, qy); return [l - CORNER, (qx / l) * sx, (qy / l) * sy]; }
+    return qx > qy ? [qx - CORNER, sx, 0] : [qy - CORNER, 0, sy];
+  }
+  // 모든 장애물 중 가장 가까운 것: [부호 거리, nx, ny]
+  function nearest(x, y) {
+    // 경기장: 가운데 선분(cx±half, cy)까지의 거리 − STAD_R
+    const ex = Math.max(-TRACK.half, Math.min(TRACK.half, x - TRACK.cx)), vx = x - TRACK.cx - ex, vy = y - TRACK.cy, l = Math.hypot(vx, vy) || 1e-9;
+    let best = [l - STAD_R, vx / l, vy / l];
+    for (const b of BOXES) {
+      if (x < b[0] - 20 || x > b[2] + 20 || y < b[1] - 20 || y > b[3] + 20) continue;
+      const d = boxDist(b, x, y);
+      if (d[0] < best[0]) best = d;
+    }
+    return best;
+  }
+  const EDGE = 8;
+  const outOfMap = (x, y) => x - FOOT_W < EDGE || y - FOOT_H < EDGE || x + FOOT_W > W - EDGE || y > H - EDGE;
+  // 발 위치(x,y)에 설 수 없는가
+  const blocked = (x, y) => outOfMap(x, y) || nearest(x, y)[0] < 0;
+
+  // 서버 검증용: (x0,y0)→(x1,y1) 직선 경로가 벽을 통과하지 않는가.
+  // 클라이언트는 벽을 따라 곡선으로 미끄러지므로 직선(현)은 둥근 모서리를 살짝 파고들 수 있다 → 2px 여유.
+  // 벽(가장 얇은 감옥 창살도 발 크기 포함 16px)은 2px 간격 표본으로 반드시 걸린다.
+  // 끝점은 0.3px까지 허용: 클라이언트가 좌표를 0.1px로 반올림해 보내므로 벽에 딱 붙은 위치가 아주 살짝 안쪽이 될 수 있음.
+  function pathClear(x0, y0, x1, y1) {
+    if (outOfMap(x1, y1) || nearest(x1, y1)[0] < -0.3) return false;
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 2));
+    for (let i = 1; i < n; i++) if (nearest(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n)[0] < -2) return false;
+    return true;
+  }
+
+  // (x,y)에서 (dx,dy)만큼 이동하되 벽에 닿으면 벽을 따라 미끄러진다. 서버·클라이언트 공용.
+  // 2px 이하 작은 걸음으로 나눠 얇은 벽을 뚫지 않고, 파고든 만큼 벽 바깥 방향으로만 밀어내므로
+  // 벽과 나란한 성분은 그대로 살아남아 곡선(경기장)·둥근 모서리를 따라 속도가 거의 줄지 않는다.
+  function move(x, y, dx, dy) {
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 2)), sx = dx / n, sy = dy / n;
+    for (let i = 0; i < n; i++) {
+      let nx = Math.min(W - EDGE - FOOT_W, Math.max(EDGE + FOOT_W, x + sx)), ny = Math.min(H - EDGE, Math.max(EDGE + FOOT_H, y + sy));
+      for (let k = 0; k < 4; k++) {
+        const [d, ux, uy] = nearest(nx, ny);
+        if (d >= 0) break;
+        nx -= ux * (d - 0.06); ny -= uy * (d - 0.06);     // 바깥으로 밀어내되 0.06px 여유 (서버의 0.1px 반올림 대비)
+      }
+      // 밀어낸 결과가 비어 있고, 원래 가려던 방향의 반대로 되돌아가지 않을 때만 인정
+      if (!blocked(nx, ny) && (nx - x) * sx + (ny - y) * sy > -1e-6) { x = nx; y = ny; continue; }
+      // 오목한 구석(두 벽 사이): 축 하나씩만 시도
+      if (!blocked(x + sx, y)) x += sx;
+      else if (!blocked(x, y + sy)) y += sy;
+      else break;
+    }
+    return [x, y];
   }
   const clampJail = (x, y) => { const c = ZONES.jailIn; return [Math.min(Math.max(x, c.x + 4), c.x + c.w - 4), Math.min(Math.max(y, c.y + 4), c.y + c.h)]; };
 
@@ -160,6 +220,6 @@
     return { gender, skin: pick(LOOK.skin), hair: pick(LOOK.hair), shirt: pick(LOOK.shirt), pants: pick(LOOK.pants), style: pick(gender === 'f' ? LOOK.fStyle : LOOK.mStyle) };
   }
 
-  const API = { T, MW, MH, W, H, TRACK, ZONES, NPCS, SOLIDS, ROCKS, RICE, ITEMS, ITEM, SLOTS, EMOTES, STABLE, STYLE_KO, COND, CFG, NAME_RE, LOOK, stadiumDist, lanePos, blocked, clampJail, inRect, phases, look };
+  const API = { T, MW, MH, W, H, TRACK, ZONES, NPCS, SOLIDS, ROCKS, RICE, ITEMS, ITEM, SLOTS, EMOTES, STABLE, STYLE_KO, COND, CFG, NAME_RE, LOOK, stadiumDist, lanePos, blocked, move, pathClear, clampJail, inRect, FENCE_R, phases, look };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WORLD = API;
 })(this);

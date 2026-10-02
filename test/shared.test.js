@@ -70,6 +70,39 @@ describe('world', () => {
   it('NAME_RE: 특수문자 차단', () => assert.ok(!W.NAME_RE.test('a<script>')));
 });
 
+describe('collision: 벽 따라 미끄러지기', () => {
+  // 한 프레임(60fps) 걷기 거리로 n번 이동하며 프레임당 이동 거리 기록
+  const walk = (x, y, dx, dy, n = 120) => { const st = []; for (let i = 0; i < n; i++) { const [a, b] = W.move(x, y, dx, dy); assert.ok(!W.blocked(a, b), `벽 안으로 들어감 ${a},${b}`); st.push(Math.hypot(a - x, b - y)); x = a; y = b; } return { x, y, st: st.slice(5) }; };
+  const F = 1.2; // 72px/s ÷ 60fps
+  it('경마장 곡선 울타리에 비스듬히 밀어도 멈추지 않고 거의 제 속도로 돌아감', () => {
+    const r = walk(W.TRACK.cx + W.TRACK.half + W.FENCE_R + 6, W.TRACK.cy + 30, -F * 0.707, -F * 0.707);
+    assert.ok(Math.min(...r.st) > F * 0.5, `걸림: 최소 ${Math.min(...r.st)}`);
+    const avg = r.st.reduce((a, b) => a + b) / r.st.length;
+    assert.ok(avg > F * 0.75, `느림: 평균 ${avg}`); // 미는 방향 중 벽과 나란한 성분만큼 (곡선이라 각도가 바뀜)
+  });
+  it('곡선 울타리를 정면(위)으로 밀면 옆으로 흘러 나감 (예전엔 완전히 멈춤)', () => {
+    const r = walk(W.TRACK.cx + W.TRACK.half + 40, W.TRACK.cy + W.FENCE_R + 30, 0, -F);
+    assert.ok(r.st.filter((v) => v < 0.05).length < 50, '멈춤');
+  });
+  it('직사각형 모서리를 스치면 둥글게 돌아 나감', () => {
+    const shop = W.SOLIDS[0], r = walk(shop.x - 6, shop.y + shop.h + 20, 0.25, -F, 120);
+    assert.ok(r.y < shop.y, `모서리에 걸림 (${r.x.toFixed(1)}, ${r.y.toFixed(1)})`);
+    assert.ok(Math.min(...r.st) > 0.3);
+  });
+  it('벽을 정면으로 밀면 떨림 없이 멈춤, 뚫지 않음', () => {
+    const J = W.ZONES.jail, r = walk(J.x - 8, J.y + 50, F * 3, 0, 60);
+    assert.ok(r.x < J.x, '창살 통과');
+    assert.ok(r.st.slice(20).every((v) => v < 0.01), '벽 앞에서 떨림');
+  });
+  it('서버 경로 검사: 미끄러진 이동은 통과, 벽 너머 순간이동은 차단', () => {
+    let x = W.TRACK.cx + W.TRACK.half + W.FENCE_R + 6, y = W.TRACK.cy + 30;
+    for (let i = 0; i < 60; i++) { const [a, b] = W.move(x, y, -F * 4, -F * 4); assert.ok(W.pathClear(x, y, Math.round(a * 10) / 10, Math.round(b * 10) / 10), `정상 이동 거부 ${x},${y}→${a},${b}`); x = Math.round(a * 10) / 10; y = Math.round(b * 10) / 10; }
+    const J = W.ZONES.jail;
+    assert.equal(W.pathClear(J.x - 8, J.y + 50, J.x + 14, J.y + 50), false);
+    assert.equal(W.pathClear(480, W.TRACK.cy + W.FENCE_R + 12, 480, W.TRACK.cy + W.FENCE_R - 12), false);
+  });
+});
+
 describe('race', () => {
   it('drawCard: 6마리, 중복 없는 마구간', () => {
     const c = RACE.drawCard(42);
