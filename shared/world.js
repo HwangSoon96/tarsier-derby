@@ -126,7 +126,7 @@
   // ---------- 경제·주기 ----------
   const CFG = {
     START_COINS: 1000, MIN_BET: 10, MAX_BETS_PER_RACE: 20, HOUSE_EDGE: 0.1,
-    // 파산 감옥: 안쪽 벼밭에서 벼를 베어 쌀을 RICE_NEED개 모아 농부에게 팔면 석방, 벨 때마다 ESCAPE_CHANCE 확률로 즉시 탈출.
+    // 파산 감옥: 안쪽 벼밭에서 벼를 베어 쌀을 RICE_NEED개 모아 간수 로봇에게 팔면 석방, 벨 때마다 ESCAPE_CHANCE 확률로 즉시 탈출.
     // 아무것도 안 해도 BANKRUPT_JAIL_MS 뒤엔 풀려남. 석방되면 재기 지원금 BAILOUT.
     BANKRUPT_JAIL_MS: 45000, BAILOUT: 300, RICE_NEED: 5, ESCAPE_CHANCE: 0.05, RICE_REGROW_MS: 5000, RICE_COOLDOWN_MS: 450,
     CYCLE_MS: 300000, RACE_MS: 60000, RESULT_MS: 15000, CLOSE_MS: 15000,

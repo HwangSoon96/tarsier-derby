@@ -13,7 +13,8 @@ if [ ! -x "$CF" ]; then
 fi
 node tools/build.js
 # 터널이 프록시이므로 접속자 IP는 X-Forwarded-For 로 판단 (IP당 접속 제한이 정상 동작)
-TRUST_PROXY=1 PORT="$PORT" node server/server.js &
+# 터널을 거쳐서만 들어오게 이 컴퓨터(127.0.0.1)에만 열어 둔다 → 프록시 헤더 위조로 IP 제한을 우회할 수 없음
+TRUST_PROXY=1 HOST=127.0.0.1 PORT="$PORT" node server/server.js &
 SRV=$!
 LOG="$(mktemp)"
 "$CF" tunnel --url "http://localhost:$PORT" --no-autoupdate >"$LOG" 2>&1 &

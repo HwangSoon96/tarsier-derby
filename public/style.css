@@ -148,29 +148,44 @@ input:focus { border-color: var(--hi); }
 #joy-zone { position: absolute; left: env(safe-area-inset-left, 0px); bottom: calc(4.4em + env(safe-area-inset-bottom, 0px)); width: 50vw; height: 45vh; pointer-events: auto; touch-action: none; }
 #joy { position: absolute; left: 50%; bottom: 1em; transform: translateX(-50%); width: 140px; height: 140px; image-rendering: auto; pointer-events: none; opacity: 0; transition: opacity .12s; }
 #joy.on { opacity: 1; }
-#act-btn { position: absolute; right: calc(1.2em + env(safe-area-inset-right, 0px)); bottom: calc(5.2em + env(safe-area-inset-bottom, 0px)); pointer-events: auto; width: 3.6em; height: 3.6em; border-radius: 50%; font-size: 1.3em; font-weight: bold; background: rgba(232,116,58,.85); color: #1a0e08; border: 3px solid rgba(0,0,0,.4); box-shadow: 0 3px 0 rgba(0,0,0,.4); touch-action: none; -webkit-tap-highlight-color: transparent; }
-#act-btn:active { transform: scale(.92); box-shadow: none; }
-#chat-toggle { position: absolute; right: calc(1.2em + env(safe-area-inset-right, 0px)); bottom: calc(9.8em + env(safe-area-inset-bottom, 0px)); pointer-events: auto; width: 2.8em; height: 2.8em; border-radius: 50%; font-size: 1em; background: rgba(26,16,12,.8); border: 2px solid var(--edge); touch-action: none; -webkit-tap-highlight-color: transparent; }
+/* 오른손 엄지 영역: 큰 행동 버튼 + 그 왼쪽 작은 채팅 버튼 (모바일 액션 게임의 일반적 배치). 크기는 px 고정 — 손가락 크기는 화면과 무관 */
+#act-btn { position: absolute; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; width: 72px; height: 72px; border-radius: 50%; padding: 0; font-size: 15px; font-weight: bold; white-space: nowrap; background: rgba(232,116,58,.9); color: #1a0e08; border: 3px solid rgba(0,0,0,.45); box-shadow: 0 4px 0 rgba(0,0,0,.4); touch-action: none; -webkit-tap-highlight-color: transparent; transition: background .15s, transform .08s; }
+#act-btn.ctx { background: var(--gold); }
+#act-btn:active { transform: scale(.92) translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.4); }
+#chat-toggle { position: absolute; right: calc(100px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; width: 52px; height: 52px; border-radius: 50%; padding: 0; font-size: 13px; white-space: nowrap; color: var(--ink); background: rgba(26,16,12,.85); border: 2px solid var(--edge); box-shadow: 0 3px 0 rgba(0,0,0,.35); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 /* 터치 기기: 키보드 바 숨기고 HUD를 세이프 영역에 맞춤 */
 @media (pointer: coarse) {
-  #bar { display: none; }
-  #chat { bottom: calc(1em + env(safe-area-inset-bottom, 0px)); left: calc(.6em + env(safe-area-inset-left, 0px)); width: min(22em, 55vw); }
-  #chat-in { font-size: 16px; /* iOS 자동 줌 방지 */ }
-  #me-box { left: calc(.6em + env(safe-area-inset-left, 0px)); top: calc(.6em + env(safe-area-inset-top, 0px)); font-size: 1em; }
-  #race-box { top: calc(.4em + env(safe-area-inset-top, 0px)); min-width: auto; max-width: 60vw; font-size: .85em; padding: .3em .6em; }
+  /* 메뉴 바: 키 글자·이모트 없이 글자 버튼만, 화면 오른쪽 위 세로 줄 (조이스틱·행동 버튼과 안 겹침) */
+  #bar { left: auto; right: calc(8px + env(safe-area-inset-right, 0px)); top: calc(4.6em + env(safe-area-inset-top, 0px)); bottom: auto; transform: none; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; }
+  #bar .key { justify-content: center; min-height: 40px; min-width: 56px; padding: 0 8px; font-size: 0; }
+  #bar .key span { font-size: 13px; }
+  #bar .sep, #bar #emotes { display: none; }
+  /* 채팅: 기록만 보이고, 채팅 버튼을 누르면 입력칸이 화면 아래에 나타남 */
+  #chat { left: calc(8px + env(safe-area-inset-left, 0px)); bottom: calc(110px + env(safe-area-inset-bottom, 0px)); width: min(22em, 60vw); pointer-events: none; }
+  #chat-log { font-size: 13px; max-height: 7.5em; }
+  #chat-in { display: none; }
+  #chat.open { z-index: 30; pointer-events: auto; left: 8px; right: 8px; width: auto; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  #chat.open #chat-in { display: block; font-size: 16px; /* iOS 자동 확대 방지 */ opacity: 1; padding: 10px 12px; }
+  #chat.open #chat-log { max-height: 12em; }
+  #me-box { left: calc(8px + env(safe-area-inset-left, 0px)); top: calc(8px + env(safe-area-inset-top, 0px)); font-size: 15px; }
+  #race-box { top: calc(6px + env(safe-area-inset-top, 0px)); min-width: 0; max-width: 46vw; font-size: 12px; padding: 4px 8px; }
   #board-box { display: none; }
-  #toasts { top: calc(4.4em + env(safe-area-inset-top, 0px)); width: min(30em, 92vw); font-size: .9em; }
-  #ticker { bottom: calc(1.4em + env(safe-area-inset-bottom, 0px)); font-size: .9em; }
-  #mybets { right: calc(.6em + env(safe-area-inset-right, 0px)); bottom: calc(1em + env(safe-area-inset-bottom, 0px)); width: 13em; font-size: .8em; }
-  .drawer { position: fixed; right: 0; left: 0; top: auto; bottom: 0; width: 100%; max-width: 100%; max-height: 70vh; border-radius: 12px 12px 0 0; padding-bottom: calc(.6em + env(safe-area-inset-bottom, 0px)); animation: bsin .22s ease-out; }
+  #mybets { right: auto; left: calc(8px + env(safe-area-inset-left, 0px)); top: calc(56px + env(safe-area-inset-top, 0px)); bottom: auto; width: auto; max-width: 44vw; font-size: 12px; }
+  #toasts { top: calc(64px + env(safe-area-inset-top, 0px)); width: min(30em, 92vw); font-size: 13px; }
+  #ticker { bottom: calc(110px + env(safe-area-inset-bottom, 0px)); font-size: 13px; width: 70vw; }
+  .drawer { position: fixed; right: 0; left: 0; top: auto; bottom: 0; width: 100%; max-width: 100%; max-height: 78vh; border-radius: 12px 12px 0 0; padding-bottom: calc(.6em + env(safe-area-inset-bottom, 0px)); animation: bsin .22s ease-out; }
   @keyframes bsin { from { transform: translateY(100%); } }
   .drawer.closing { animation: bsout .16s ease-in forwards; }
   @keyframes bsout { to { transform: translateY(100%); } }
-  .mbox { max-width: 96vw; max-height: 80vh; }
-  .tcard { flex-direction: column; gap: .8em; } .tform { min-width: auto; width: 100%; }
+  .drawer button, .tabs button { min-height: 40px; }
+  .mbox { max-width: 96vw; max-height: 82vh; }
+  .tcard { flex-direction: column; gap: .8em; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 1em; } .tform { min-width: 0; width: 100%; }
+  .tform * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  #title { overflow-y: auto; align-items: safe center; padding: 8px 0; }
+  #nick { font-size: 16px; }
   #avatar { width: calc(40px * 3); height: calc(44px * 3); }
-  #prompt { font-size: .8em; }
   canvas#view { touch-action: none; }
+  #prompt { font-size: .8em; }
 }
 /* 360px 이하 극소형 */
 @media (max-width: 420px) {

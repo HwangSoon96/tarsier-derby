@@ -8,6 +8,7 @@
     "start": "node tools/build.js && node server/server.js",
     "dev": "node tools/build.js && node server/server.js",
     "share": "bash tools/share.sh",
+    "e2e": "node tools/build.js && node --test --test-concurrency=1 test/e2e.browser.js",
     "test": "node tools/build.js && node --test test/*.test.js"
   },
   "keywords": [],

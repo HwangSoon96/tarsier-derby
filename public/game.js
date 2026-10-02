@@ -26,6 +26,9 @@
     parts: [], pops: [], t: 0, interact: null, lastNet: 0, betType: 'win', pick: [], amount: +(localStorage.getItem('td-amt') || 100), holdUse: false, coinShow: 0
   };
   const now = () => Date.now() + G.offset; // 서버 시계
+  // 터치 기기 여부: 안내 문구를 'E 키' 대신 화면 버튼 이름으로 바꾸는 데 씀
+  const TOUCH = 'ontouchstart' in window || matchMedia('(pointer:coarse)').matches;
+  const KEY_E = TOUCH ? '행동 버튼' : 'E 키';
 
   // ---------- 캔버스 ----------
   const view = $('view'), vx = view.getContext('2d');
@@ -408,7 +411,7 @@
     if (typing()) document.activeElement.blur();
     const wx = G.cam.x + (e.clientX * dpr) / gp, wy = G.cam.y + (e.clientY * dpr) / gp, me = G.players.get(G.id);
     const n = NPCS.find((q) => Math.abs(q.x - wx) < 12 && wy > q.y - 34 && wy < q.y + 4);
-    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 키를 눌러 주세요.`); return; }
+    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 ${KEY_E}를 눌러 주세요.`); return; }
     if (e.button === 0 || e.button === 2) { G.holdUse = e.button === 0; use(); }
   });
   addEventListener('mouseup', () => { G.holdUse = false; });
@@ -416,7 +419,7 @@
   function findTarget(p) {
     if (!p) return null;
     let best = null, bd = 1e9;
-    // 감옥 안: 농부 간수와 익은 벼만 상호작용 (다른 NPC·바위는 창살 밖)
+    // 감옥 안: 간수 로봇와 익은 벼만 상호작용 (다른 NPC·바위는 창살 밖)
     if (p.jail > now()) {
       const f = NPCS.find((n) => n.id === 'farmer'), fd = Math.hypot(f.x - p.x, f.y - p.y);
       if (fd < 34) { bd = fd; best = { kind: 'npc', ref: f }; }
@@ -443,7 +446,7 @@
     else if (n.act === 'rice') {
       const rice = G.me ? G.me.rice || 0 : 0;
       if (!(G.me && G.me.jail > now())) toast(`벼리: 파산하면 감옥에서 벼를 베게 될 거예요. 쌀 ${CFG.RICE_NEED}개를 가져오면 내보내 드려요.`);
-      else if (rice < CFG.RICE_NEED) toast(`벼리: 쌀이 ${CFG.RICE_NEED - rice}개 더 필요해요. 익은 벼를 E 키로 베어 주세요!`);
+      else if (rice < CFG.RICE_NEED) toast(`벼리: 쌀이 ${CFG.RICE_NEED - rice}개 더 필요해요. 익은 벼를 ${KEY_E}으로 베어 주세요!`);
       else send({ t: 'sell' });
     }
   }
@@ -567,7 +570,7 @@
   function onJailed() {
     S.jail(); setCam('follow');
     const p = G.players.get(G.id); if (p) p.act = -1;
-    toast(`파산해서 감옥에 갇혔어요! 익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 간수 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출!`, 'bad');
+    toast(`파산해서 감옥에 갇혔어요! 익은 벼를 ${KEY_E}${TOUCH ? '으' : ''}로 베어 쌀 ${CFG.RICE_NEED}개를 간수 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출!`, 'bad');
     if (betOpen()) closeBet();
   }
 
@@ -597,7 +600,6 @@
 
   // ---------- 모바일 터치: 가상 조이스틱 + 액션 버튼 ----------
   // 터치 기기(coarse pointer)에서만 표시. 조이스틱은 왼쪽 절반, 액션 버튼은 오른쪽 하단.
-  const TOUCH = 'ontouchstart' in window || matchMedia('(pointer:coarse)').matches;
   if (TOUCH) {
     $('touch').classList.remove('hidden');
     const jz = $('joy-zone'), jc = $('joy'), jx = jc.getContext('2d');
@@ -659,12 +661,22 @@
     ab.addEventListener('touchstart', (e) => { e.preventDefault(); AU.init(); G.keys.add('KeyE'); use(); actInterval = setInterval(() => { if (G.keys.has('KeyE')) use(); }, 600); }, { passive: false });
     const actEnd = () => { G.keys.delete('KeyE'); clearInterval(actInterval); };
     ab.addEventListener('touchend', actEnd); ab.addEventListener('touchcancel', actEnd);
-    // 프롬프트 텍스트 → 액션 버튼 라벨 동기화
-    const syncActBtn = () => { const it = G.interact; ab.textContent = !it ? 'E' : it.kind === 'rice' ? '🌾' : it.kind === 'rock' ? '⛏' : it.ref.act === 'bet' ? '💰' : it.ref.act === 'shop' ? '🛒' : it.ref.act === 'rice' ? '🌾' : 'E'; requestAnimationFrame(syncActBtn); };
+    // 액션 버튼 라벨: 지금 할 수 있는 동작을 짧은 동사로 (픽셀 글꼴에 없는 이모지는 쓰지 않음). 바뀔 때만 DOM 갱신.
+    const syncActBtn = () => {
+      const it = G.interact;
+      const label = !it ? '행동' : it.kind === 'rice' ? '베기' : it.kind === 'rock' ? '캐기' : it.ref.act === 'bet' ? '베팅' : it.ref.act === 'shop' ? '상점' : it.ref.act === 'rice' ? '팔기' : '대화';
+      if (ab.textContent !== label) { ab.textContent = label; ab.classList.toggle('ctx', !!it); }
+      requestAnimationFrame(syncActBtn);
+    };
     syncActBtn();
 
     // 채팅 토글
-    $('chat-toggle').addEventListener('click', () => { const el = $('chat-in'); if (el === document.activeElement) { sendChat(); } else { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } });
+    // 채팅: 버튼을 누르면 입력칸이 열리고 키보드가 올라옴. 키보드의 '보내기'(Enter)로 전송, 칸 밖을 누르면 닫힘.
+    const chat = $('chat'), cin = $('chat-in');
+    cin.placeholder = '메시지 입력'; cin.enterKeyHint = 'send';
+    $('chat-toggle').addEventListener('click', () => { if (chat.classList.contains('open')) { sendChat(); chat.classList.remove('open'); } else { chat.classList.add('open'); cin.focus(); } });
+    // 채팅 버튼을 눌러 보낼 때도 입력칸 blur가 먼저 일어나므로, 닫기는 클릭 처리 뒤로 미룸
+    cin.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== cin) chat.classList.remove('open'); }, 200));
 
     // 캔버스 터치 기본 동작 차단 (줌·스크롤 방지)
     document.getElementById('view').addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
@@ -995,7 +1007,7 @@
       const pcOut = A.outline(pc);
       // 능력치 바
       const statBar = (label, val, col) => {
-        const bar = h('i'); bar.innerHTML = ''; const inner = h('b', { style: `width:${val}%;background:${col}` }); bar.appendChild(inner);
+        const bar = h('i'); const inner = h('b', { style: `width:${val}%;background:${col}` }); bar.appendChild(inner);
         return bar;
       };
       const statsEl = h('div', { class: 'stats' }, statBar('SPD', q.spd, '#ff6a5a'), statBar('STA', q.sta, '#3b78d8'), statBar('GUT', q.gut, '#e8b830'), statBar('LCK', q.luck, '#4caf50'));
@@ -1028,7 +1040,7 @@
     if (closed) { $('place').disabled = true; return; }
     const ready = G.betType === 'exacta' ? G.pick.length === 2 : G.pick.length === 1;
     if (!ready) {
-      sp.textContent = G.betType === 'exacta' ? `1착과 2착을 순서대로 골라 주세요 (${G.pick.length}/2)` : '응원할 안경원숭이를 골라 주세요 (숫자 키 1~6)';
+      sp.textContent = G.betType === 'exacta' ? `1착과 2착을 순서대로 골라 주세요 (${G.pick.length}/2)` : (TOUCH ? '응원할 안경원숭이를 골라 주세요' : '응원할 안경원숭이를 골라 주세요 (숫자 키 1~6)');
       $('payout').textContent = ''; $('place').disabled = true; return;
     }
     const odds = G.betType === 'exacta' ? (r.odds ? (r.odds.exacta[G.pick[0] + '-' + G.pick[1]] || 0) : 0) : r.odds ? r.odds[G.betType][G.pick[0]] : 0;
@@ -1078,7 +1090,12 @@
         if (slot === 'hat') { const L = lookOf({ seed: p.seed, g: p.gender }); A.person(ig, 20, 40, L, 0, 0, {}); A.hat(ig, 20, A.person(ig, 20, 40, L, 0, 0, {}).headTop, it.id, 0); }
         else if (slot === 'pet') A.pet(ig, 20, 40, it.id, 0, true);
         else if (slot === 'ride') A.ride(ig, 20, 40, it.id, 0, 0, 'front');
-        else { ig.fillStyle = '#fff'; ig.font = '18px sans-serif'; ig.textAlign = 'center'; ig.fillText('✨', 20, 28); }
+        else {
+          // 발자취 미리보기: 걸어간 자리에 남는 픽셀 점들 (이모지 대신 실제 색)
+          const col = { t_dust: ['#d8b890', '#b8936a'], t_heart: ['#ff6a8a', '#ffb0c0'], t_spark: ['#fff6a0', '#ffffff'], t_fire: ['#ff7a2a', '#ffd040'], t_rainbow: ['#ff5a5a', '#ffd040', '#6ad06a', '#3b78d8', '#b05ad8'] }[it.id] || ['#fff'];
+          for (let i = 0; i < 7; i++) { const x = 6 + i * 4, y = 32 - Math.round(Math.sin(i * 0.9) * 4) - i * 2; A.R(ig, x, y, i % 2 ? 2 : 3, i % 2 ? 2 : 3, col[i % col.length]); }
+          A.R(ig, 33, 12, 4, 4, '#3a2a20'); A.R(ig, 34, 13, 2, 2, '#f1bf96');
+        }
         const card = h('div', {
           class: 'item' + (eq ? ' eq' : owned ? ' own' : ''),
           onclick: () => {
@@ -1117,18 +1134,19 @@
     body.appendChild(h('h2', null, '화성간건호 · 도움말'));
     const sec = (t) => body.appendChild(h('h3', null, t));
     sec('베팅');
-    body.appendChild(h('p', null, '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 E 키를 누르거나 B 키로 베팅 창을 열 수 있어요.'));
+    body.appendChild(h('p', null, TOUCH ? '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 행동 버튼을 누르거나 오른쪽 위 베팅 버튼으로 베팅 창을 열 수 있어요.' : '경주는 5분마다 열려요. 베팅 로봇 BET-9 앞에서 E 키를 누르거나 B 키로 베팅 창을 열 수 있어요.'));
     body.appendChild(h('p', null, '단승은 1착, 연승은 2착 이내, 쌍승은 1착과 2착을 순서대로 맞히는 베팅이에요.'));
     sec('광석 채굴');
-    body.appendChild(h('p', null, '맵 양쪽의 바위는 E 키, 스페이스바, 클릭으로 캘 수 있어요. 세 번 내리치면 코인을 얻고, 4% 확률로 보석이 나와요.'));
+    body.appendChild(h('p', null, (TOUCH ? '맵 양쪽의 바위 앞에서 행동 버튼을 누르면 캘 수 있어요.' : '맵 양쪽의 바위는 E 키, 스페이스바, 클릭으로 캘 수 있어요.') + ' 세 번 내리치면 코인을 얻고, 4% 확률로 보석이 나와요.'));
     sec('상점');
-    body.appendChild(h('p', null, '잡화상 쿠쿠에게 가거나 I 키를 눌러 모자, 발자취, 탈것, 펫을 살 수 있어요.'));
+    body.appendChild(h('p', null, (TOUCH ? '잡화상 쿠쿠에게 가거나 오른쪽 위 상점 버튼을 눌러' : '잡화상 쿠쿠에게 가거나 I 키를 눌러') + ' 모자, 발자취, 탈것, 펫을 살 수 있어요.'));
     sec('파산');
     body.appendChild(h('p', null, `코인이 ${CFG.MIN_BET}개보다 적어지면 파산해서 감옥에 갇혀 안경원숭이로 변해요.`));
-    body.appendChild(h('p', null, `익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 모아 농부 로봇 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출할 수도 있어요.`));
+    body.appendChild(h('p', null, `익은 벼를 ${KEY_E}${TOUCH ? '으' : ''}로 베어 쌀 ${CFG.RICE_NEED}개를 모아 간수 로봇 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출할 수도 있어요.`));
     body.appendChild(h('p', null, `아무것도 안 해도 ${Math.round(CFG.BANKRUPT_JAIL_MS / 1000)}초 뒤엔 풀려나요. 나올 때 재기 지원금 ${CFG.BAILOUT} 코인을 받아요.`));
-    sec('단축키');
-    body.appendChild(h('p', null, 'WASD/방향키: 이동 · Shift: 달리기 · E/스페이스: 상호작용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
+    if (TOUCH) { sec('조작'); body.appendChild(h('p', null, '왼쪽 화면 어디든 누른 채 끌면 이동, 멀리 끌면 달리기 · 오른쪽 아래 행동 버튼: 상호작용(꾹 누르면 반복) · 채팅 버튼: 채팅')); }
+    else sec('단축키');
+    if (!TOUCH) body.appendChild(h('p', null, 'WASD/방향키: 이동 · Shift: 달리기 · E/스페이스: 상호작용 · B: 베팅 · I: 상점 · L: 순위 · V: 중계 · H: 도움말 · M: 음소거 · 1~6: 이모트 · Enter: 채팅'));
     showEl($('modal')); S.ui();
   }
   function openResult(m) {

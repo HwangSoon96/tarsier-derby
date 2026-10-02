@@ -17,6 +17,12 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()', 'Cross-Origin-Opener-Policy': 'same-origin'
 };
 const BANNED = ['시발', '씨발', '병신', '좆', '개새', '니애미', '느금'];
+// 운영자 사칭 방지: 닉네임에만 적용 (채팅에서는 그냥 단어)
+// 운영자 사칭 방지. 한글은 포함만 돼도 막고, 영문은 낱말 단위로만 막음 (iPadMini·Pigman 같은 정상 이름 오탐 방지)
+const RESERVED_KO = ['관리자', '운영자', '운영진', '시스템'];
+const RESERVED_EN = new Set(['admin', 'gm', 'system', 'moderator', 'mod', 'staff']);
+const reservedName = (name) => RESERVED_KO.some((w) => name.includes(w))
+  || name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/).some((w) => RESERVED_EN.has(w));
 
 // 부팅 시 정적 파일을 메모리에 올림 → 요청 경로로 디스크에 접근하지 않음(경로 조작 원천 차단)
 function loadStatic(root) {
@@ -50,6 +56,8 @@ function createServer(opts = {}) {
   try {
     const raw = JSON.parse(fs.readFileSync(o.dataFile, 'utf8'));
     if (raw && typeof raw.profiles === 'object') for (const [k, p] of Object.entries(raw.profiles)) if (/^[0-9a-f]{64}$/.test(k) && p && typeof p.name === 'string' && Number.isSafeInteger(p.coins)) db.profiles[k] = p;
+    // 지난 실행에서 정산되지 못한 베팅은 환불 (그 경주는 다시 열리지 않음)
+    if (raw && Array.isArray(raw.open)) for (const b of raw.open) { const p = b && db.profiles[b.h]; if (p && Number.isSafeInteger(b.amount) && b.amount > 0) { p.coins += b.amount; dirty = true; } }
   } catch (e) { if (e.code !== 'ENOENT') log('데이터 파일 손상, 새로 시작:', e.message); }
   const markDirty = () => { dirty = true; };
   function persist() {
@@ -57,7 +65,9 @@ function createServer(opts = {}) {
     dirty = false;
     fs.mkdirSync(path.dirname(o.dataFile), { recursive: true });
     const tmp = o.dataFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(db));
+    // 진행 중인 경주의 베팅도 함께 저장 → 서버가 경주 도중 꺼졌다 켜지면 돌려준다 (돈이 사라지지 않게)
+    const open = race && !race.settled ? race.bets.map((b) => ({ h: b.h, amount: b.amount })) : [];
+    fs.writeFileSync(tmp, JSON.stringify({ profiles: db.profiles, open }));
     fs.renameSync(tmp, o.dataFile);
   }
   const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
@@ -200,10 +210,10 @@ function createServer(opts = {}) {
   function onRice(s, m) {
     const now = Date.now();
     if (!isInt(m.id, 0, RICE.length - 1) || !(s.p.jail > now) || rice[m.id] > now) return;
-    if (now - (s.riceAt || 0) < CFG.RICE_COOLDOWN_MS) return;
+    if (mono() - (s.riceAt ?? -1e9) < CFG.RICE_COOLDOWN_MS) return;
     const k = RICE[m.id];
     if (Math.hypot(k.x - s.x, k.y - s.y) > 26) return;
-    s.riceAt = now; rice[m.id] = now + CFG.RICE_REGROW_MS;
+    s.riceAt = mono(); rice[m.id] = now + CFG.RICE_REGROW_MS;
     s.p.rice = (s.p.rice || 0) + 1; markDirty();
     broadcast({ t: 'rice', id: m.id, at: rice[m.id], by: s.id });
     if (Math.random() < CFG.ESCAPE_CHANCE) return release(s, 'lucky');
@@ -223,8 +233,11 @@ function createServer(opts = {}) {
   }
 
   // ---------- 메시지 처리 ----------
-  const bucket = (rate, burst) => ({ rate, burst, v: burst, t: Date.now() });
-  const take = (b, n = 1) => { const t = Date.now(); b.v = Math.min(b.burst, b.v + ((t - b.t) / 1000) * b.rate); b.t = t; if (b.v < n) return false; b.v -= n; return true; };
+  // 간격(속도 제한·쿨다운·이동 예산)은 단조 시계로 잰다. 벽시계(Date.now)는 시간 동기화 때 뒤로 갈 수 있어
+  // 그 순간 모든 플레이어의 입력이 몇 초씩 막히는 버그가 생긴다. (경주 일정·수감 시각처럼 저장·공유되는 시각만 Date.now)
+  const mono = () => performance.now();
+  const bucket = (rate, burst) => ({ rate, burst, v: burst, t: mono() });
+  const take = (b, n = 1) => { const t = mono(); b.v = Math.min(b.burst, b.v + (Math.max(0, t - b.t) / 1000) * b.rate); b.t = t; if (b.v < n) return false; b.v -= n; return true; };
   const isInt = (v, lo, hi) => Number.isSafeInteger(v) && v >= lo && v <= hi;
   const num = (v) => typeof v === 'number' && Number.isFinite(v);
   function cleanText(s, max) {
@@ -236,6 +249,7 @@ function createServer(opts = {}) {
 
   function onHello(s, m) {
     const name = cleanText(m.name, CFG.NAME_MAX);
+    if (reservedName(name)) return send(s, { t: 'err', code: 'name', text: '운영자로 오해받을 수 있는 닉네임은 쓸 수 없어요.' });
     if ([...name].length < CFG.NAME_MIN || !W.NAME_RE.test(name) || BANNED.some((w) => name.includes(w))) return send(s, { t: 'err', code: 'name', text: '닉네임은 2~10자 한글·영문·숫자·_- 만 가능해요.' });
     if (m.g !== 'm' && m.g !== 'f') return send(s, { t: 'err', code: 'bad', text: '성별을 선택해 주세요.' });
     if (!isInt(m.seed, 0, 0xffffffff)) return send(s, { t: 'err', code: 'bad', text: '아바타 정보가 올바르지 않아요.' });
@@ -256,7 +270,7 @@ function createServer(opts = {}) {
     s.p = p; s.h = h; byToken.set(h, s);
     if (p.jail > Date.now()) [s.x, s.y] = JAIL_SPOT();
     else { const z = W.ZONES.spawn; s.x = z.x + 8 + Math.random() * (z.w - 16); s.y = z.y + 8 + Math.random() * (z.h - 16); }
-    s.lastMove = Date.now(); s.budget = 0;
+    s.lastMove = mono(); s.budget = 0;
     markDirty();
     send(s, {
       t: 'welcome', id: s.id, token: fresh ? token : undefined, me: me(p), x: s.x, y: s.y, now: Date.now(),
@@ -275,8 +289,8 @@ function createServer(opts = {}) {
 
   function onMove(s, m) {
     if (!num(m.x) || !num(m.y) || !isInt(m.d, 0, 7)) return;
-    const now = Date.now(), dt = Math.min(0.5, (now - s.lastMove) / 1000);
-    s.lastMove = now;
+    const now = Date.now(), t = mono(), dt = Math.min(0.5, Math.max(0, t - s.lastMove) / 1000);
+    s.lastMove = t;
     const ride = s.p.eq.ride && ITEM[s.p.eq.ride] ? ITEM[s.p.eq.ride].speed : 1;
     const vmax = CFG.WALK * Math.min(CFG.MAX_SPEED_MULT, ride * (m.r ? CFG.RUN_MULT : 1));
     // 지터 허용 예산: 이동 가능 거리 + 0.25초분 여유를 누적·소진
@@ -295,10 +309,10 @@ function createServer(opts = {}) {
 
   function onMine(s, m) {
     if (!isInt(m.rock, 0, rocks.length - 1) || s.p.jail > Date.now()) return;
-    const now = Date.now(), r = rocks[m.rock], k = ROCKS[m.rock];
-    if (now - (s.mineAt || 0) < CFG.MINE_COOLDOWN_MS || r.hp <= 0) return;
+    const now = Date.now(), t = mono(), r = rocks[m.rock], k = ROCKS[m.rock];
+    if (t - (s.mineAt ?? -1e9) < CFG.MINE_COOLDOWN_MS || r.hp <= 0) return;
     if (Math.hypot(k.x - s.x, k.y - s.y) > 30) return;
-    s.mineAt = now; r.hp--;
+    s.mineAt = t; r.hp--;
     if (r.hp > 0) return broadcast({ t: 'rock', id: r.id, hp: r.hp, by: s.id });
     const gem = Math.random() < CFG.GEM_CHANCE;
     const coins = gem ? CFG.GEM_REWARD : crypto.randomInt(CFG.ROCK_REWARD[0], CFG.ROCK_REWARD[1] + 1);
@@ -356,7 +370,7 @@ function createServer(opts = {}) {
     if (!take(s.chatB)) return send(s, { t: 'err', code: 'slow', text: '조금 천천히 말해 주세요.' });
     const text = filterBad(cleanText(m.text, CFG.CHAT_MAX));
     if (!text) return;
-    const now = Date.now();
+    const now = mono();
     if (text === s.lastChat && now - s.lastChatAt < 5000) return;
     s.lastChat = text; s.lastChatAt = now;
     broadcast({ t: 'chat', id: s.id, name: s.p.name, text });
@@ -447,7 +461,18 @@ function createServer(opts = {}) {
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2048, perMessageDeflate: false });
-  const clientIp = (req) => (o.trustProxy && req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : req.socket.remoteAddress) || '?';
+  // 프록시(터널) 뒤에서는 프록시가 붙인 헤더로 실제 IP를 판단. 단, 같은 컴퓨터(루프백)에서 온 요청일 때만 믿는다.
+  // X-Forwarded-For 는 맨 앞을 클라이언트가 마음대로 넣을 수 있으므로 프록시가 마지막에 붙인 값을 쓴다 → IP 위조로 접속 제한 우회 불가.
+  const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+  function clientIp(req) {
+    const direct = req.socket.remoteAddress || '?';
+    if (!o.trustProxy || !LOOPBACK.has(direct)) return direct;
+    const cf = req.headers['cf-connecting-ip'];
+    if (typeof cf === 'string' && cf) return cf.trim();
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff) return xff.split(',').pop().trim() || direct;
+    return direct;
+  }
   server.on('upgrade', (req, socket, head) => {
     const reject = (code) => { socket.write(`HTTP/1.1 ${code} Rejected\r\nConnection: close\r\n\r\n`); socket.destroy(); };
     if ((req.url || '').split('?')[0] !== '/ws') return reject(404);

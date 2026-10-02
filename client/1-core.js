@@ -26,6 +26,9 @@
     parts: [], pops: [], t: 0, interact: null, lastNet: 0, betType: 'win', pick: [], amount: +(localStorage.getItem('td-amt') || 100), holdUse: false, coinShow: 0
   };
   const now = () => Date.now() + G.offset; // 서버 시계
+  // 터치 기기 여부: 안내 문구를 'E 키' 대신 화면 버튼 이름으로 바꾸는 데 씀
+  const TOUCH = 'ontouchstart' in window || matchMedia('(pointer:coarse)').matches;
+  const KEY_E = TOUCH ? '행동 버튼' : 'E 키';
 
   // ---------- 캔버스 ----------
   const view = $('view'), vx = view.getContext('2d');

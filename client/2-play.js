@@ -36,7 +36,7 @@
     if (typing()) document.activeElement.blur();
     const wx = G.cam.x + (e.clientX * dpr) / gp, wy = G.cam.y + (e.clientY * dpr) / gp, me = G.players.get(G.id);
     const n = NPCS.find((q) => Math.abs(q.x - wx) < 12 && wy > q.y - 34 && wy < q.y + 4);
-    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 E 키를 눌러 주세요.`); return; }
+    if (n) { if (dist(me, n) < 48) interact(n); else toast(`${n.name}에게 가까이 가서 ${KEY_E}를 눌러 주세요.`); return; }
     if (e.button === 0 || e.button === 2) { G.holdUse = e.button === 0; use(); }
   });
   addEventListener('mouseup', () => { G.holdUse = false; });
@@ -44,7 +44,7 @@
   function findTarget(p) {
     if (!p) return null;
     let best = null, bd = 1e9;
-    // 감옥 안: 농부 간수와 익은 벼만 상호작용 (다른 NPC·바위는 창살 밖)
+    // 감옥 안: 간수 로봇와 익은 벼만 상호작용 (다른 NPC·바위는 창살 밖)
     if (p.jail > now()) {
       const f = NPCS.find((n) => n.id === 'farmer'), fd = Math.hypot(f.x - p.x, f.y - p.y);
       if (fd < 34) { bd = fd; best = { kind: 'npc', ref: f }; }
@@ -71,7 +71,7 @@
     else if (n.act === 'rice') {
       const rice = G.me ? G.me.rice || 0 : 0;
       if (!(G.me && G.me.jail > now())) toast(`벼리: 파산하면 감옥에서 벼를 베게 될 거예요. 쌀 ${CFG.RICE_NEED}개를 가져오면 내보내 드려요.`);
-      else if (rice < CFG.RICE_NEED) toast(`벼리: 쌀이 ${CFG.RICE_NEED - rice}개 더 필요해요. 익은 벼를 E 키로 베어 주세요!`);
+      else if (rice < CFG.RICE_NEED) toast(`벼리: 쌀이 ${CFG.RICE_NEED - rice}개 더 필요해요. 익은 벼를 ${KEY_E}으로 베어 주세요!`);
       else send({ t: 'sell' });
     }
   }
@@ -195,7 +195,7 @@
   function onJailed() {
     S.jail(); setCam('follow');
     const p = G.players.get(G.id); if (p) p.act = -1;
-    toast(`파산해서 감옥에 갇혔어요! 익은 벼를 E 키로 베어 쌀 ${CFG.RICE_NEED}개를 간수 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출!`, 'bad');
+    toast(`파산해서 감옥에 갇혔어요! 익은 벼를 ${KEY_E}${TOUCH ? '으' : ''}로 베어 쌀 ${CFG.RICE_NEED}개를 간수 벼리에게 팔면 풀려나요. 벨 때마다 ${Math.round(CFG.ESCAPE_CHANCE * 100)}% 확률로 바로 탈출!`, 'bad');
     if (betOpen()) closeBet();
   }
 
@@ -225,7 +225,6 @@
 
   // ---------- 모바일 터치: 가상 조이스틱 + 액션 버튼 ----------
   // 터치 기기(coarse pointer)에서만 표시. 조이스틱은 왼쪽 절반, 액션 버튼은 오른쪽 하단.
-  const TOUCH = 'ontouchstart' in window || matchMedia('(pointer:coarse)').matches;
   if (TOUCH) {
     $('touch').classList.remove('hidden');
     const jz = $('joy-zone'), jc = $('joy'), jx = jc.getContext('2d');
@@ -287,12 +286,22 @@
     ab.addEventListener('touchstart', (e) => { e.preventDefault(); AU.init(); G.keys.add('KeyE'); use(); actInterval = setInterval(() => { if (G.keys.has('KeyE')) use(); }, 600); }, { passive: false });
     const actEnd = () => { G.keys.delete('KeyE'); clearInterval(actInterval); };
     ab.addEventListener('touchend', actEnd); ab.addEventListener('touchcancel', actEnd);
-    // 프롬프트 텍스트 → 액션 버튼 라벨 동기화
-    const syncActBtn = () => { const it = G.interact; ab.textContent = !it ? 'E' : it.kind === 'rice' ? '🌾' : it.kind === 'rock' ? '⛏' : it.ref.act === 'bet' ? '💰' : it.ref.act === 'shop' ? '🛒' : it.ref.act === 'rice' ? '🌾' : 'E'; requestAnimationFrame(syncActBtn); };
+    // 액션 버튼 라벨: 지금 할 수 있는 동작을 짧은 동사로 (픽셀 글꼴에 없는 이모지는 쓰지 않음). 바뀔 때만 DOM 갱신.
+    const syncActBtn = () => {
+      const it = G.interact;
+      const label = !it ? '행동' : it.kind === 'rice' ? '베기' : it.kind === 'rock' ? '캐기' : it.ref.act === 'bet' ? '베팅' : it.ref.act === 'shop' ? '상점' : it.ref.act === 'rice' ? '팔기' : '대화';
+      if (ab.textContent !== label) { ab.textContent = label; ab.classList.toggle('ctx', !!it); }
+      requestAnimationFrame(syncActBtn);
+    };
     syncActBtn();
 
     // 채팅 토글
-    $('chat-toggle').addEventListener('click', () => { const el = $('chat-in'); if (el === document.activeElement) { sendChat(); } else { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } });
+    // 채팅: 버튼을 누르면 입력칸이 열리고 키보드가 올라옴. 키보드의 '보내기'(Enter)로 전송, 칸 밖을 누르면 닫힘.
+    const chat = $('chat'), cin = $('chat-in');
+    cin.placeholder = '메시지 입력'; cin.enterKeyHint = 'send';
+    $('chat-toggle').addEventListener('click', () => { if (chat.classList.contains('open')) { sendChat(); chat.classList.remove('open'); } else { chat.classList.add('open'); cin.focus(); } });
+    // 채팅 버튼을 눌러 보낼 때도 입력칸 blur가 먼저 일어나므로, 닫기는 클릭 처리 뒤로 미룸
+    cin.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== cin) chat.classList.remove('open'); }, 200));
 
     // 캔버스 터치 기본 동작 차단 (줌·스크롤 방지)
     document.getElementById('view').addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
